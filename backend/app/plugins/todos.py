@@ -1,22 +1,9 @@
 """The session to-do list.
 
-A plan the model writes once and then progressively ticks off, which is the
-single cheapest way to keep a long task from drifting (and the reason
-``react-step`` produces better long-run behaviour than a bare ReAct loop).
-
-Storage is per session — ``~/.amrita/sessions/<id>/todos.json`` — because a
-plan belongs to the conversation that made it, and it should disappear with it.
-Two properties matter:
-
-* **Full replace is the primitive.** ``todo_write`` takes the complete list, so
-  the model never has to reason about patch ordering; ``todo_update`` exists for
-  the incremental case ("mark 3 done") but is built on the same file.
-* **Every change is pushed.** The tool publishes a ``todos`` event into the
-  session stream, so the panel updates without polling and a reconnect replays
-  the list to wherever it is now.
-
-The tools are in ``_READ_ONLY_TOOL_NAMES``'s spirit but not its list: they write
-session state, never the workspace, so a read-only preset keeps them.
+Stored per session in ``~/.amrita/sessions/<id>/todos.json``. ``todo_write``
+replaces the whole list, ``todo_update`` patches it, and every change is pushed
+as a ``todos`` event so the panel updates without polling. These tools touch
+session state only, so read-only presets keep them.
 """
 
 from __future__ import annotations

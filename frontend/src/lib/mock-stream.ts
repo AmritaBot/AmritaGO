@@ -6,7 +6,7 @@
  * provider, a key, or a round trip. Nothing here is sent anywhere; the reply is
  * generated in the browser and disappears on reload.
  *
- * Enabled from 设置 → 插件 → 开发者选项. Kept out of the normal path on purpose:
+ * Enabled from 设置 -> 插件 -> 开发者选项. Kept out of the normal path on purpose:
  * a fake answer that looks real is a trap if it is one switch away from the
  * default.
  */
@@ -490,7 +490,7 @@ export function finishMockAudit({
   onEvent({
     type: "meta",
     content: approved
-      ? `unix_run ${edited ? "（命令已被修改）" : ""} → exit 0`
+      ? `unix_run ${edited ? "（命令已被修改）" : ""} -> exit 0`
       : "unix_run 被拒绝，未执行",
     metadata: {
       type: "function_call",

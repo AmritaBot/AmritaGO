@@ -5,7 +5,7 @@
 
 ## 首次配置模型
 
-启动后打开「设置 → 模型」：
+启动后打开「设置 -> 模型」：
 
 1. 新增 Provider，填写名称、Base URL、协议和 API Key。
 2. 使用「嗅探模型」读取服务端提供的模型列表；也可手动添加模型 ID。
@@ -42,7 +42,7 @@ Provider 保存连接信息，一个 Provider 下可配置多个模型。当前�
 └─ skills/<技能名>/SKILL.md
 ```
 
-工作区也可以在应用中切换或登记。文件工具的工作范围取决于界面当前选择的工作区及访问模式。
+工作区也可以在应用中切换或登记。文件与 shell 工具的工作范围取决于界面当前选择的工作区及访问模式；未选择过工作区时使用项目根目录（源码运行时即仓库根），不会退回到启动进程的当前目录。
 
 Skill 发现使用 `AMRITA_GO_WORKSPACE` 对应的工作区 Skill 目录及 `AMRITA_GO_DATA/skills` 用户目录。Skill 发现目录、同名覆盖和按需调用方式见 [Skill 系统指南](skills.md)。注意：当前实现的 Skill 工作区目录由 `AMRITA_GO_WORKSPACE` 确定。
 
@@ -65,9 +65,29 @@ Provider API Key 以 Fernet 加密后写入凭据文件，密钥来源按程序�
 
 ## 插件和 MCP 设置
 
-- 在「设置 → 插件」启用或禁用可切换插件，并编辑插件自行声明的配置。启停状态持久化在 `settings.json` 的 `enabled_plugins`；新插件默认不启用，不在列表中的插件不会被激活。
+- 在「设置 -> 插件」启用或禁用可切换插件，并编辑插件自行声明的配置。启停状态持久化在 `settings.json` 的 `enabled_plugins`；新插件默认不启用，不在列表中的插件不会被激活。
 - MCP 服务定义保存在数据目录的 `mcp.json`，连接状态和工具列表可在设置界面查看。
 - `core-tools`、`files`、`todos` 等核心插件是固定启用的。
 - 只读访问模式不提供 shell 工具；`workspace` 和 `full` 的具体边界请在使用前确认。Alpha 阶段不要把访问模式当作安全沙箱。
 
 Agent 预设详情见 [Agent 预设指南](agents.md)，插件配置详情见[插件指南](plugins.md)。
+
+## Shell 与 WSL
+
+`unix` shell 插件支持原生 bash、zsh、Git Bash 和 WSL。可在「设置 -> 插件 -> shell-unix」里配置：
+
+| 选项 | 说明 |
+| --- | --- |
+| `flavour` | `auto` 优先原生 bash/zsh，没有原生 shell 时回退 WSL；也可固定为 `bash`、`zsh` 或 `wsl`。 |
+| `wsl_distro` | WSL 发行版名称；留空使用默认发行版。可用 `wsl -l -q` 查看名称（如 `Ubuntu`）。 |
+| `executable` | 固定解释器路径。选 WSL 时可留空，由插件使用 `wsl.exe`。 |
+| `init_commands` | 每条命令前执行的初始化脚本，例如 `. ~/.bashrc` 或 `cd /workspace`。 |
+
+WSL 模式下，插件自动把 Windows 工作区路径翻译为 `/mnt/<盘符>/...`，并通过 `wsl.exe [ -d <发行版> ] --exec bash` 执行命令。切换发行版会使用独立会话，不与默认发行版的当前目录混用。`auto` 只有在没有原生 bash/zsh 时才选择 WSL，避免把命令意外跑进 Linux 文件系统。
+
+注意：
+
+- WSL 发行版列表在启动时探测并缓存；安装新发行版后重启 AmritaGO，设置页才会出现。
+- 工作区路径必须能被 WSL 访问；位于 `\\wsl$` 或其他 Windows 无法映射到 `wsl.exe` 的工作目录可能无法启动。
+- 在 WSL 内 `cd /tmp` 等 Linux 路径会被保留为下一次命令的起点；这是有意行为，不是工作区限制的绕过方式，但请避免在需要工作区隔离的任务中使用。
+- `executable` 指向 Git Bash 时仍按 MSYS 路径 `/c/...` 处理，不会误加 WSL 的 `--exec` 参数。

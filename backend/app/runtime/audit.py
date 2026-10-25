@@ -1,22 +1,10 @@
 """Human-in-the-loop confirmation for tool calls.
 
-A tool that is about to do something irreversible asks the browser first. The
-agent task then parks on a future; the WebSocket handler resolves it when the
-user approves (possibly with an edited command), rejects (with a reason), or
-the timeout fires.
-
-Why this lives in its own module rather than in the shell plugin:
-
-* The *transport* is generic — publish a ``confirm`` event into the session's
-  :class:`~.stream_hub.StreamChannel`, wait for a ``confirm_response`` frame on
-  the chat socket. Nothing about it is shell-specific.
-* The *policy* stays in the tool. The shell plugin decides when a command is
-  worth asking about; this module only knows how to ask.
-
-Failure is closed, but not fatal: a rejected, timed-out or undeliverable
-confirmation returns a decision with ``approved=False`` and a human-readable
-reason, which the tool hands back to the model as an ordinary tool result. A
-turn never hangs because nobody answered.
+The tool publishes a ``confirm`` event into the session stream and parks on a
+future that the chat socket resolves with an approval (optionally with an
+edited command), a rejection (with a reason) or a timeout. Policy lives in the
+tool; this module only knows how to ask. Every failure mode resolves to
+"not approved".
 """
 
 from __future__ import annotations

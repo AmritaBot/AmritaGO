@@ -1,26 +1,9 @@
 """Route uvicorn's standard-library logging into loguru.
 
-Two reasons this exists:
-
-* **One format.** uvicorn configures ``logging`` with ``dictConfig`` and its own
-  ``logging.Formatter``, so a terminal that also carries AmritaCore's loguru
-  output shows two different styles interleaved — ``INFO:     Application
-  startup complete.`` next to ``2026-10-24 23:44 | INFO | ...``.
-* **One sink.** Closing the app should not require hunting for a second handler
-  that still writes to stderr, and a filter (`LOG_LEVEL`) that works for
-  AmritaCore should work for the server too.
-
-How it is wired: :class:`amrita_sense.logging.LoguruHandler` forwards a
-``logging.LogRecord`` into loguru, so installing it on the ``uvicorn.*`` loggers
-is enough. ``propagate`` is turned off on each of them — otherwise the record
-would reach the root logger as well and print twice.
-
-Order matters, and is why this is a function rather than a module-level
-statement in two places: uvicorn runs ``dictConfig`` when its ``Config`` object
-is built, which is *before* the app module is imported, so a module-level call
-in ``app.main`` always lands after uvicorn's handlers and replaces them. The
-console entry point calls it early so even the first line ("Started server
-process") goes through loguru.
+uvicorn installs its own formatter via ``dictConfig``, which would interleave a
+second style with AmritaCore's loguru output. ``LoguruHandler`` forwards records
+into loguru; the console entry point calls this before uvicorn starts so even
+the first line goes through the same sink.
 """
 
 from __future__ import annotations

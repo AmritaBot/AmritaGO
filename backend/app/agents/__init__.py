@@ -1,30 +1,8 @@
 """Agent presets: one Markdown file per agent mode.
 
-Format::
-
-    ---
-    name: standard
-    title: 标准模式
-    description: 处理代码、文件和资料，适合大多数任务。
-    icon: wrench
-    tools: [skill_*, read_*]       # tool globs; omit for all, [] for none
-    access: [readonly]             # access modes; omit for all
-    workflow: react                # must be a registered workflow
-    memory: session                # give this preset a per-session scratch dir
-    template: |                    # Jinja2; omit to use AmritaCore's default
-      <SYSTEM_INSTRUCTIONS>
-      {{ train.content }}
-      </SYSTEM_INSTRUCTIONS>
-    ---
-    你是 AmritaGO……
-
-Everything after the single front-matter block is the prompt body, and the body
-*is* the system prompt: there is no global prompt to fall back to, because a
-mode is defined by its instructions.
-
-A body line that begins with ``\\---`` is unescaped to ``---``, so a preset can
-still print a horizontal rule. A bare ``---`` block immediately after the front
-matter is rejected with a migration hint: templates live in YAML now.
+The front matter holds ``name/description/icon/tools/access/workflow/memory/
+template``; everything after it is the prompt body, and the body *is* the
+system prompt. A body line starting with ``\\---`` becomes a literal ``---``.
 """
 
 from __future__ import annotations
@@ -78,7 +56,7 @@ class AgentPreset:
     workflow: str | None = None
     #: ``"session"`` mounts an app-owned scratch directory for plans and notes.
     memory: str | None = None
-    #: ``None`` → use AmritaCore's default Jinja2 template.
+    #: ``None`` -> use AmritaCore's default Jinja2 template.
     template: str | None = None
     prompt: str = ""
     path: Path | None = None

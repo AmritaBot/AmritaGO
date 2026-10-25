@@ -1,13 +1,8 @@
 """Access modes: a coarse, user-visible statement of what an agent may do.
 
-Three levels, matching what the composer already shows. They are deliberately
-coarse: a fine-grained permission language would need per-tool rules, and the
-useful question here is "may this mode write at all".
-
-The mode is *declared* by a preset (``access: [readonly]``) and *requested* by
-the client per message. The effective value is the intersection — a preset can
-narrow what the UI asks for, never widen it. So a read-only preset stays
-read-only even if the composer is set to "full".
+``readonly`` / ``workspace`` / ``full``. A preset declares an upper bound and
+the client requests one per message; the effective mode is the intersection,
+so a preset can narrow a request but never widen it.
 """
 
 from __future__ import annotations

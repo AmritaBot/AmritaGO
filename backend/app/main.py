@@ -694,7 +694,7 @@ async def get_workflows() -> dict[str, Any]:
     workspace = _workspace_path(settings.active_workspace)
     active_agent = resolve_agent(settings.active_agent, workspace)
     presets = await discover_agents(workspace)
-    #: workflow name → presets that pin it, so the UI can say which ignores the switch.
+    #: workflow name -> presets that pin it, so the UI can say which ignores the switch.
     pinned_by: dict[str, list[str]] = {}
     for preset in presets:
         if preset.workflow:
@@ -804,7 +804,7 @@ async def reload_plugins() -> dict[str, Any]:
 
 
 class PluginConfigPayload(BaseModel):
-    #: Dotted paths → values, as produced by the derived form.
+    #: Dotted paths -> values, as produced by the derived form.
     values: dict[str, Any] = Field(default_factory=dict)
     #: Hash of the snapshot the client edited. ``None`` skips the check.
     hash: str | None = None
@@ -1190,7 +1190,7 @@ async def _forward_until_done(
 async def chat_socket(websocket: WebSocket) -> None:
     """Bidirectional chat socket.
 
-    Client → server messages:
+    Client -> server messages:
       ``{"type": "send", "session_id": "...", "message": "...", "preset": "..."}``
           start a turn (returns immediately; events arrive on this socket)
       ``{"type": "resume", "session_id": "...", "stream_id": "..."}``
@@ -1316,7 +1316,7 @@ async def chat_socket(websocket: WebSocket) -> None:
                         {
                             "type": "error",
                             "message": (
-                                "没有可用的模型。请在设置 → 模型里添加 Provider "
+                                "没有可用的模型。请在设置 -> 模型里添加 Provider "
                                 "和至少一个模型，并选中它。"
                             ),
                         }
@@ -1328,7 +1328,7 @@ async def chat_socket(websocket: WebSocket) -> None:
                     _frame(
                         {
                             "type": "error",
-                            "message": (f"{resolved.name} 没有 API Key。请到设置 → 模型里补上。"),
+                            "message": (f"{resolved.name} 没有 API Key。请到设置 -> 模型里补上。"),
                         }
                     )
                 )

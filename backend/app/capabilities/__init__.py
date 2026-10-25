@@ -1,15 +1,8 @@
 """Capability composition at the AmritaCore backend boundary.
 
-The ability backend asks this module for a tool pool and an MCP client view.
-Both are built from the active plugin snapshot, so tools, skills and MCP
-servers are three independent sources that a preset can filter separately:
-
-* ``tools`` selects tool names by glob;
-* ``mcp`` selects MCP servers by glob;
-* skills remain governed by the global skill switch.
-
-Nothing is registered into AmritaCore's global managers here. Each run gets a
-fresh ``MultiToolsManager`` composed from the snapshot.
+Each run gets a fresh ``MultiToolsManager`` built from the active plugin
+snapshot: presets filter tools by glob, MCP servers by glob, and skills by the
+global switch. Nothing is registered into AmritaCore's global managers.
 """
 
 from __future__ import annotations
@@ -431,7 +424,7 @@ _SOURCE_LABELS = {
 
 
 def _source_plugin_map() -> dict[str, Any]:
-    """tool source name → the plugin that declared it (if any)."""
+    """tool source name -> the plugin that declared it (if any)."""
     out: dict[str, Any] = {}
     for plugin in PLUGINS.snapshot.plugins:
         for tool_source in plugin.tools:

@@ -3,7 +3,7 @@
  *
  * Lists what the runtime registered, shows which workflow is active, and can
  * re-run activation. Developer mode is the switch that makes the backend
- * load → unload → load plugins on every activation, so a plugin that leaks
+ * load -> unload -> load plugins on every activation, so a plugin that leaks
  * state is reported instead of silently accumulating it.
  */
 

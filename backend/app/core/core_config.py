@@ -1,20 +1,8 @@
 """AmritaCore runtime config: schema-driven editing with validation.
 
-Mirrors the AmritaBot config editor: the backend derives a form schema from the
-Pydantic model itself, the client renders fields from that schema, and the
-server re-validates whatever comes back before it is persisted. Two details
-matter:
-
-* **Schema from the model, not a hand-written list.** ``AmritaConfig`` already
-  carries a description for every field, so a new option appears in the UI as
-  soon as the model changes — nothing to keep in sync by hand.
-* **Optimistic concurrency via a content hash.** The client sends back the hash
-  it read. If the file changed underneath it the save is rejected with 409
-  instead of silently clobbering the edit.
-
-Only *some* fields are editable. Anything that would let a single request
-exfiltrate data (API keys, base URLs) is intentionally excluded from the
-editable set: those belong to presets, which have their own endpoint.
+The form schema is derived from the Pydantic model, and a save carries the
+content hash the client read, so a concurrent edit is rejected with 409.
+Fields that could exfiltrate data (API keys, base URLs) are not editable here.
 """
 
 from __future__ import annotations
@@ -76,7 +64,7 @@ FIELD_DESCRIPTIONS: dict[str, str] = {
         "模型已开启原生思考时再用 reasoning 会造成双重消耗。"
     ),
     "builtin.react_config.structured_reasoning": (
-        "让模型按 analyze → plan → execute → verify 四段标记分步推理。"
+        "让模型按 analyze -> plan -> execute -> verify 四段标记分步推理。"
         "这也是提示词层的引导，不改变请求参数；"
         "模型本身已有原生思考时再开启，输出预算会被两套推理一起吃掉。"
     ),
@@ -178,7 +166,7 @@ EDITABLE_FIELDS: tuple[str, ...] = (
 
 
 def flatten(data: dict[str, Any], parent: str = "", sep: str = ".") -> dict[str, Any]:
-    """``{"a": {"b": 1}}`` → ``{"a.b": 1}``."""
+    """``{"a": {"b": 1}}`` -> ``{"a.b": 1}``."""
     out: dict[str, Any] = {}
     for key, value in data.items():
         path = f"{parent}{sep}{key}" if parent else key

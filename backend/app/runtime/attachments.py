@@ -1,18 +1,8 @@
 """Attachments: images pasted into the composer and long text turned into files.
 
-Two different problems, one path:
-
-* An **image** must reach the model as an image, so it is stored as a data URL
-  and passed through as ``ImageContent``. AmritaCore's adapters accept that
-  shape for multimodal models.
-* A **long paste** is not something a chat box handles well, and repeating it in
-  every retry wastes context. It is written to ``~/.amrita/attachments`` and
-  referenced by path, so the agent can read it with a tool and the transcript
-  stays readable.
-
-Both live under the data directory rather than a workspace: an attachment is
-per-conversation state, and a workspace copy would tempt someone to commit a
-screenshot of their terminal.
+An image is stored as a data URL and passed on as ``ImageContent``; a long
+paste is written under ``~/.amrita/attachments`` and referenced by path. Both
+are per-conversation state, so they stay out of the workspace.
 """
 
 from __future__ import annotations
@@ -171,7 +161,7 @@ def to_content(items: list[Attachment]) -> list[dict[str, Any]]:
                 {
                     "type": "text",
                     "text": (
-                        f"[attached file: {item.name} → {item.path}]\n"
+                        f"[attached file: {item.name} -> {item.path}]\n"
                         "Read it with a shell or file tool if you need the contents."
                     ),
                 }
@@ -204,7 +194,7 @@ def build_user_content(text: str, attachments: list[dict[str, Any]]) -> UserCont
                 TextContent(
                     type="text",
                     text=(
-                        f"[attached file: {item.get('name')} → {item['path']}]\n"
+                        f"[attached file: {item.get('name')} -> {item['path']}]\n"
                         "Read it with a shell or file tool if you need the contents."
                     ),
                 )

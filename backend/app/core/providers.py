@@ -1,22 +1,9 @@
 """Providers: an endpoint plus a key, with the models on top.
 
-A provider is what a user actually configures — "DeepSeek, this base URL, this
-key". Models are then *added to it* one by one, because a provider serves many
-and guessing which ones exist is what produced the old "preset: auto" mystery.
-
-Storage:
-
-``providers/registry.json``           — provider metadata, no secrets
-``providers/<id>/credentials.enc``    — one Fernet token: api key (+ optional
-                                        extra headers), written atomically
-
-Splitting them means a provider list can be read, diffed and shown without ever
-touching the encrypted part, and a single corrupt credential file costs one
-provider rather than the whole registry.
-
-A :class:`ModelPreset` is built on demand from a provider + a model id. It is
-never persisted: changing a base URL applies to every model behind it, which is
-the behaviour a user expects when they fix a typo.
+Metadata lives in ``providers/registry.json``, the API key (and optional extra
+headers) in ``providers/<id>/credentials.enc``, so the provider list can be
+read and shown without touching secrets. A :class:`ModelPreset` is derived on
+demand and never persisted: editing a base URL fixes every model behind it.
 """
 
 from __future__ import annotations

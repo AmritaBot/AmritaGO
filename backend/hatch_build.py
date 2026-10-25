@@ -1,13 +1,9 @@
 """Hatch build hook that bundles the built SPA into the backend artifacts.
 
-The frontend is a separate Bun project, so without this hook ``uv build`` would
-produce a wheel that only contains Python sources — the FastAPI server would
-then start without any UI to serve. The hook guarantees ``frontend/dist``
-exists (building it with Bun when necessary) and maps it to ``app/_frontend``
-inside the wheel, where :data:`app.core.config.BUNDLED_FRONTEND` looks for it.
-
-The sdist carries the same files under ``frontend/dist`` so that a wheel built
-from the sdist does not need Bun or the frontend sources.
+Without it a wheel holds only Python sources, so the server starts with no UI.
+The hook finds (or builds) ``frontend/dist`` and maps it to ``app/_frontend``
+in the wheel; the sdist keeps it at ``frontend/dist`` so a wheel can be rebuilt
+from it without Bun.
 """
 
 from __future__ import annotations

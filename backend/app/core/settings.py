@@ -18,35 +18,38 @@ from app.core.storage import read_json, read_json_sync, write_json
 class AppSettings(BaseModel):
     """User-facing knobs persisted in ``data/settings.json``."""
 
-    #: ``provider_id::model_id``; the run-time preset is built from it.
     active_model: str | None = None
-    #: Agent preset name (``agents/<name>.md``). ``None`` → built-in standard.
+    """``provider_id::model_id``; the run-time preset is built from it."""
     active_agent: str | None = None
-    #: Registered workflow to run when the active agent does not pin one.
+    """Agent preset name (``agents/<name>.md``). ``None`` -> built-in standard."""
     active_workflow: str | None = None
-    #: Workspace the UI is currently pointed at; ``None`` → the project root.
+    """Registered workflow to run when the active agent does not pin one."""
     active_workspace: str | None = None
-    #: ``None`` → every discovered skill is enabled. ``[]`` → none.
+    """Workspace the UI is currently pointed at; ``None`` -> the project root."""
     enabled_skills: list[str] | None = None
-    #: MCP server names (keys of ``mcp.json``) that should be connected.
+    """``None`` -> every discovered skill is enabled. ``[]`` -> none."""
     enabled_mcp: list[str] = Field(default_factory=list)
-    #: Tool name globs removed from every run's pool; a filter on the per-run copy.
+    """MCP server names (keys of ``mcp.json``) that should be connected."""
     disabled_tools: list[str] = Field(default_factory=list)
-    #: Authoritative plugin enable list. ``None`` means "not initialized yet":
-    #: bundled plugins start enabled, later arrivals start disabled.
+    """Tool name globs removed from every run's pool; a filter on the per-run copy."""
     enabled_plugins: list[str] | None = None
-    #: Legacy inverted form, migrated into :attr:`enabled_plugins` at startup.
+    """Authoritative plugin enable list.
+
+    ``None`` means "not initialized yet": bundled plugins start enabled, later
+    arrivals start disabled.
+    """
     disabled_plugins: list[str] = Field(default_factory=list)
-    #: Developer mode: reload plugins to prove they are side-effect free.
+    """Legacy inverted form, migrated into ``enabled_plugins`` at startup."""
     debug: bool = False
-    #: Budget policy: ``graceful`` winds down, ``ask`` parks and offers continue / graceful / abort.
+    """Developer mode: reload plugins to prove they are side-effect free."""
     tool_limit_policy: Literal["graceful", "ask"] = "graceful"
-    #: Refusal rounds after the budget is spent, applied to ``agent_tool_refusal_rounds``.
+    """Budget policy: ``graceful`` winds down, ``ask`` parks and offers continue / graceful / abort."""
     tool_limit_extension: int = Field(default=5, ge=1, le=50)
-    #: How long the parked run waits for an answer before winding down.
+    """Refusal rounds after the budget is spent, applied to ``agent_tool_refusal_rounds``."""
     tool_limit_timeout: float = Field(default=300.0, ge=10, le=3600)
-    #: ``presets/*.json`` imported once; set to ``false`` to re-run the import.
+    """How long the parked run waits for an answer before winding down."""
     legacy_presets_imported: bool = False
+    """``presets/*.json`` imported once; set to ``false`` to re-run the import."""
     updated_at: float = Field(default_factory=time.time)
 
 

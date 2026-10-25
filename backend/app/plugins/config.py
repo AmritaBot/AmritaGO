@@ -1,18 +1,8 @@
 """Per-plugin settings, declared by the plugin and rendered by the web UI.
 
-A plugin that needs configuration does not read a file itself: it declares a
-Pydantic model, and the runtime stores values for it under
-``~/.amrita/plugin_configs/<plugin>.json``. Three consequences follow, all of
-them deliberate:
-
-* **The form is derived, not hand-written.** The schema comes from the model's
-  own fields and descriptions, so adding an option to a plugin never requires
-  touching the frontend.
-* **Values are validated on save.** A plugin that expects ``int`` never has to
-  defend against a string from a hand-edited JSON file.
-* **Nothing leaks between reloads.** Reading a config is an explicit call
-  (``get``), so a plugin cannot accidentally capture a half-loaded value at
-  import time.
+A plugin declares a Pydantic model; the runtime stores values under
+``~/.amrita/plugin_configs/<plugin>.json``. The form comes from the model, so
+adding a field needs no frontend change, and values are validated on save.
 """
 
 from __future__ import annotations

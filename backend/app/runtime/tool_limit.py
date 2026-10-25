@@ -1,46 +1,10 @@
 """Tool-budget policy on top of AmritaCore's ReAct strategy.
 
-AmritaCore already handles an exhausted budget: ``on_limited()`` tells the model
-to stop calling tools and answer with what it has. That is the right default —
-a run that keeps going forever is a run nobody is watching — but it is silent
-about one legitimate case: the agent was making progress and the user would have
-paid for more.
-
-So this module adds a second policy, selected by ``settings.tool_limit_policy``:
-
-``graceful``
-    Exactly AmritaCore's behaviour: wind down, answer, finish. The *number* of
-    wind-down rounds is the user's ``tool_limit_extension`` setting, applied to
-    ``agent_tool_refusal_rounds`` for the run.
-
-``ask``
-    Park the run and ask the browser. Three answers, three endings:
-
-    * **继续迭代** does not extend this turn — it winds down exactly as above and
-      a *new turn* starts afterwards with its normal budget. A budget you can
-      raise on demand is not a budget.
-    * **优雅收尾** winds this turn down: the model answers with what it has.
-    * **直接中断** cuts the turn off where it stands. No wind-down round, no last
-      model call — the run stops and says so.
-
-    A timeout, or a Stop press, resolves to the wind-down rather than losing the
-    work already done.
-
-How the policies share one code path
-------------------------------------
-Every answer but ``abort`` ends in ``super().on_limited()``; the only difference
-is whether ``continue_requested`` gets set on the stream channel first. The
-runtime watches that flag after the turn finishes and spawns the successor, so
-this class never touches the loop's counter, never rewrites its own config, and
-cannot corrupt a run halfway through.
-
-``abort`` is the exception, and it works by *not* marking the budget exhausted:
-the loop guards interpret that as "do not wind down" and break out immediately,
-which is exactly the behaviour asked for. The turn still has an answer stored
-(a one-line notice) so ``LLM_COMPLETION`` does not quietly ask the model again.
-
-``_asked`` stops a second guard (the step loop has two) from asking twice in the
-same round.
+``graceful`` is AmritaCore's behaviour: wind down and answer, with
+``tool_limit_extension`` rounds. ``ask`` parks the run and lets the browser
+decide — ``continue`` starts a new turn with a normal budget, ``优雅收尾`` winds
+this one down, ``直接中断`` drops it. ``abort`` works by not marking the budget
+exhausted, so the loop's guards break out immediately.
 """
 
 from __future__ import annotations
@@ -70,7 +34,7 @@ def for_run(config: AmritaConfig | None = None) -> AmritaConfig:
     ``function_config.agent_tool_call_limit`` private to the run that changed it.
 
     The refusal-round budget is folded in here as well, because it is a *user*
-    setting (设置 → 行为) covering what a cut-off run may still do — AmritaCore
+    setting (设置 -> 行为) covering what a cut-off run may still do — AmritaCore
     reads it off the config, and the app-level knob would otherwise be ignored.
     """
     from app.core.settings import load_settings_sync

@@ -1,16 +1,10 @@
 """Skill discovery and tool-pool injection, backed by ``faskill``.
 
-``faskill`` owns the SKILL.md format: front-matter parsing, ``$ARGUMENTS``
-substitution, script metadata, caching and validation all live there. This
-module only adapts its ``SkillContext`` to AmritaGO:
-
-1. discover skills from the workspace (higher priority) and user directories;
-2. expose one tool per enabled skill, named exactly like the skill;
-3. emit ``skill_call`` stream metadata so the UI can show the invocation;
-4. build the ``## Available faskill skills`` section of the system prompt.
-
-Skills are registered into a **clone** of the global ``ToolsManager`` so that
-per-session filtering never mutates the process-wide tool registry.
+``faskill`` owns the SKILL.md format (front matter, ``$ARGUMENTS``, script
+metadata, caching). This module only adapts its ``SkillContext``: discover
+workspace-then-user skills, expose one tool per enabled skill under the skill's
+own name, emit ``skill_call`` stream metadata, and build the skill section of
+the system prompt.
 """
 
 from __future__ import annotations

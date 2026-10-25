@@ -1,24 +1,10 @@
 """Park a run that spent its tool budget, and ask whether to keep going.
 
-Sibling of :mod:`app.audit`, and separated for the same reason: the *transport*
-is generic (publish an event, wait for a frame on the chat socket), the *policy*
-belongs to the strategy that spent the budget. The two are not merged because a
-confirmation carries a command the user may edit, while this one carries only a
-budget the user may accept — sharing a payload type would mean a struct where
-half the fields are meaningless.
-
-"继续" is an answer, not an extension: the turn still winds down, and the runtime
-starts a fresh one afterwards. So the event carries no round count to add.
-
-There are three answers, and the difference between the last two is the point of
-the gate: **优雅收尾** winds down (the model answers with what it has), while
-**直接中断** drops the turn where it stands. Collapsing them into one "stop"
-would decide for the user, and "I would rather not pay for another round than
-read a rushed answer" is a legitimate thing to want.
-
-Failure is closed: a timeout, a stop request or a missing channel all resolve to
-``"graceful"``, which is AmritaCore's ordinary wind-down — losing the work
-already done is the one outcome nobody asked for.
+Transport only: publish an event and wait for a frame on the chat socket; the
+policy belongs to the strategy that spent the budget. Answers are ``continue``
+(a new turn starts afterwards), ``graceful`` (wind down and answer) and
+``abort`` (drop the turn). A timeout, a stop or a missing channel resolve to
+``graceful``.
 """
 
 from __future__ import annotations

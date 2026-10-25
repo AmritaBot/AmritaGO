@@ -216,7 +216,7 @@ export interface AgentPreset {
   workflow_title: string | null;
   workflow_mode: WorkflowMode | null;
   workflow_mode_label: string | null;
-  /** ``"session"`` → per-conversation scratch directory for plans/notes. */
+  /** ``"session"`` -> per-conversation scratch directory for plans/notes. */
   memory: "session" | null;
   scope: "builtin" | "user" | "workspace";
   /** This file overrides a built-in mode; deleting it restores the built-in. */
@@ -260,7 +260,7 @@ export interface WorkflowListing {
   active_agent: string;
   /** ``null`` when the preset follows the global switch. */
   active_agent_workflow: string | null;
-  /** workflow name → presets that pin it. */
+  /** workflow name -> presets that pin it. */
   pinned_by: Record<string, string[]>;
   workflows: WorkflowSpec[];
 }

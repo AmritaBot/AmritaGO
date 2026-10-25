@@ -1,12 +1,9 @@
 """Per-turn billing and token accounting.
 
-AmritaCore already records one :class:`BillingRecord` per provider request.
-This module turns that ledger into the numbers the UI needs: the turn's token
-spend, the wall-clock and generation durations, tokens per second, cache
-counters, and the derived money value when the preset carries a price.
-
-Metrics are stored per turn (``usage.jsonl``) and folded into the session meta
-so a reload can show the same numbers without replaying the run.
+Turns AmritaCore's per-request :class:`BillingRecord` ledger into what the UI
+shows: tokens, durations, tokens per second, cache counters and, when the
+preset carries a price, money. Records are appended per turn to ``usage.jsonl``
+and folded into the session meta so a reload needs no replay.
 """
 
 from __future__ import annotations

@@ -1,17 +1,9 @@
 """Replayable per-stream event buffer.
 
-The agent runs in its own task and never talks to a socket directly: it only
-appends events to a :class:`StreamChannel`. A WebSocket handler drains that
-channel. Two consequences matter:
-
-* A disconnected browser cannot break the run — writing to the buffer never
-  raises, so a failed ``send`` is simply the handler's problem.
-* Reconnecting is trivial: the whole run is still in the buffer, so the client
-  replays it from the start and continues live from wherever the agent is.
-
-The buffer itself is an append-only ``StringIO`` (one JSON event per line),
-which is exactly the "keep writing, read from the front" shape a resumable
-stream needs.
+The agent appends events to a :class:`StreamChannel` and a WebSocket handler
+drains it: writing never raises, so a disconnected browser cannot break a run,
+and a reconnect replays the run from the start. Storage is an append-only
+``StringIO`` holding one JSON event per line.
 """
 
 from __future__ import annotations

@@ -1,28 +1,9 @@
 """Workflow registry.
 
-A workflow is the strategy the agent loop executes. Agent presets name one of
-these entries in their YAML front matter; a preset can never select a strategy
-that was not registered, so a typo fails at save time instead of producing a
-run that silently behaves like the default.
-
-Two ReAct flavours ship here, and the difference is a real behavioural one:
-
-``react``
-    The standard tool loop. ``single_execute`` runs once per round; the model
-    gets tools, calls them, answers. No plan, no decomposition, no extra
-    request.
-
-``react-step``
-    The native step loop. Before the first step the strategy asks the model to
-decompose the task into a DAG, then walks the nodes (intro / execute / leave)
-with per-step token budgets. Costs one extra request up front and emits
-``step`` events, which is what makes progress visible for long tasks - and
-what makes it the wrong choice for a one-line question.
-
-Both use ``ReActAgentStrategy``; they differ in the pre-rendered pipeline, so
-the distinction lives in this table rather than in a subclass. Plugins may add
-more through :class:`~.plugins.PluginContext`; the plugin runtime installs the
-active set as one immutable mapping, never by mutating the built-in table.
+An agent preset names a workflow in its front matter; an unknown name fails at
+save time. ``react`` is the plain tool loop. ``react-step`` decomposes the task
+into a DAG first, at the cost of one extra request, and emits ``step`` events.
+Plugins may register more.
 """
 
 from __future__ import annotations

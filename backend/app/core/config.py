@@ -1,32 +1,8 @@
 """Application settings and filesystem layout.
 
-Two roots, deliberately split:
-
-``~/.amrita`` (user-global, never inside a repo)
-    settings.json          # active model, enabled skills / MCP
-    core.json              # AmritaCore runtime config (AmritaConfig snapshot)
-    secret.key             # Fernet key for provider credentials
-    providers/             # provider registry + encrypted credentials
-      registry.json        #   names, base URLs, models (no secrets)
-      <id>/credentials.enc #   encrypted API key
-    plugin_configs/*.json  # per-plugin settings declared by the plugin itself
-    agents/*.md            # agent presets (mode definitions)
-    plugins/*.py           # lifecycle plugins loaded at startup
-    workspaces.json        # registered workspaces
-    mcp.json               # MCP server definitions
-    sessions/<id>/         # conversation state
-      context.json         #   MemoryModel (JSON context)
-      history.jsonl        #   append-only visible transcript
-      usage.jsonl          #   per-turn token / billing records
-      meta.json            #   title / timestamps / counters
-
-``<workspace>/.amrita`` (project-scoped, meant to be committed)
-    skills/<name>/SKILL.md # project skills; shadow user-global ones by name
-    agents/*.md            # project agent presets; shadow user-global ones
-
-Provider credentials live exclusively under ``~/.amrita`` because they carry
-API keys: a file inside a workspace would end up in git. Skills are the
-opposite — they are project knowledge and belong next to the code.
+``~/.amrita`` holds user-global state (settings, providers, plugins, agents,
+workspaces, sessions); ``<workspace>/.amrita`` holds project skills and agent
+presets. Credentials stay in the data directory because they carry API keys.
 """
 
 from __future__ import annotations
@@ -36,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 #: Repository root (…/AmritaAgent), three levels above this file
-#: (``core`` → ``app`` → ``backend`` → repo).
+#: (``core`` -> ``app`` -> ``backend`` -> repo).
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 #: Package directory (``…/app``); bundled assets sit next to the code.

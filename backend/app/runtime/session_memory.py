@@ -1,17 +1,9 @@
 """Per-session scratch directory for plans and working notes.
 
-A preset opts in with ``memory: session``. Its directory lives at
-``~/.amrita/sessions/<id>/memory``:
-
-* **inside the session** — deleting the conversation deletes the notes with it,
-  and a branch starts with an empty one instead of inheriting a stale plan;
-* **outside the workspace** — a read-only preset can still write its plan
-  without gaining the ability to touch the code it is planning against.
-
-That split is the whole point: "read-only" should mean "this mode must not
-change the project", not "this mode cannot take notes". The tools below are
-therefore allowed in the read-only access mode (see :mod:`app.permissions`),
-and every path is resolved under the session directory.
+A preset opts in with ``memory: session``; the directory is
+``~/.amrita/sessions/<id>/memory`` — inside the session, so it is deleted with
+the conversation, but outside the workspace, so a read-only preset can still
+keep notes.
 """
 
 from __future__ import annotations

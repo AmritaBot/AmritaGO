@@ -1,16 +1,10 @@
 """Capture the provider error that a preset fallback swallowed.
 
-AmritaCore's ``call_completion`` retries a failed request against other presets.
-When no matcher swaps the preset it raises ``FallbackFailed("No preset fallback
-available, exiting!")`` *while handling* the real provider error, so the
-original status code and response body only exist in the exception chain — or,
-when the failure is streamed as an error message, nowhere at all.
-
-Diagnosing "why did my request fail" needs that original text. This module
-registers one ``PRESET_FALLBACK`` matcher that records ``exc_info`` into a
-context variable scoped to the current turn. The matcher deliberately does not
-touch ``ctx.preset``: fallback behaviour stays exactly as AmritaCore defines it,
-we only keep a copy of the message.
+AmritaCore's ``call_completion`` retries against other presets and raises
+``FallbackFailed`` while handling the real provider error, so the original
+status code and body survive only in the exception chain. One
+``PRESET_FALLBACK`` matcher records ``exc_info`` into a turn-scoped context
+variable; it never touches ``ctx.preset``, so fallback behaviour is unchanged.
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 # Agent 预设指南
 
-AmritaGO 的 Agent 预设使用 Markdown 文件表示，文件顶部可以有一段 YAML front matter，正文就是 Agent 的系统提示词。内置预设包括 `standard`、`planner` 和 `coder`；可在「设置 → Agent」查看和切换。
+AmritaGO 的 Agent 预设使用 Markdown 文件表示，文件顶部可以有一段 YAML front matter，正文就是 Agent 的系统提示词。内置预设包括 `standard`、`planner` 和 `coder`；可在「设置 -> Agent」查看和切换。
 
 仓库自带的示例预设位于 `.amrita/agents/demo-project.md`。它是只读的项目导览助手，用来演示工作区级预设的结构。启动 AmritaGO 后，在 Agent 设置中选择「项目导览」即可使用。
 

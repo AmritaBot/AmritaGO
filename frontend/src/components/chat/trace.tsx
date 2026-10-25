@@ -435,7 +435,7 @@ function CompactionNotice({
             <span className="text-muted-foreground line-through decoration-muted-foreground/40">
               Compacting Conversations
             </span>{" "}
-            <span aria-hidden>→</span> Compacted Conversations
+            <span aria-hidden>-></span> Compacted Conversations
           </>
         ) : skipped ? (
           "Compacting Conversations"

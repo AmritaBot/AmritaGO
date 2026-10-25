@@ -5,7 +5,7 @@ Requires the app server on :8000 and ``scripts/mock_openai.py`` on :8099.
     .venv/Scripts/python.exe scripts/e2e_mock.py
 
 Verifies:
-  * a full streaming turn arrives as ``start`` → many ``delta`` → ``done``
+  * a full streaming turn arrives as ``start`` -> many ``delta`` -> ``done``
   * assistant text and user message land in history.jsonl
   * a second turn reuses the persisted JSON context
   * reconnect replay of a *finished* run does not duplicate the answer

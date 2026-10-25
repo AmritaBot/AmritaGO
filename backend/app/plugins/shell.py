@@ -1,20 +1,9 @@
 """Shell tools: one plugin per *family*, sharing one session layer.
 
-``unix`` covers bash and zsh — they accept the same POSIX script, the same
-quoting rules and the same completion markers, so having two plugins that
-differ only in the binary name meant two copies of everything and a preset that
-could not say "any POSIX shell". ``pwsh`` stays separate: its script dialect,
-quoting and path form are genuinely different, and a host without PowerShell
-should not advertise a tool that cannot run.
-
-The shared layer is :class:`app.tools.shell.ShellSession` — directory persistence,
-OSC completion, output caps, run history, per-interpreter identity. The family
-only decides which script builder is used and how paths are written.
-
-Each plugin also implements the audit gate: when configured to, a command is
-shown to the user before it runs, and the user may **edit** it or **reject** it
-with a reason. The reason goes back to the model as an ordinary tool result, so
-a rejected plan can be revised instead of silently retried.
+``unix`` covers bash, zsh and WSL; ``pwsh`` stays separate because its dialect
+and path form differ. The shared layer is :class:`app.tools.shell.ShellSession`.
+An optional audit gate can show a command to the user, who may edit or reject
+it with a reason returned to the model as an ordinary tool result.
 """
 
 from __future__ import annotations
@@ -36,6 +25,7 @@ from amrita_sense.logging import logger
 from pydantic import BaseModel, Field, field_validator
 
 from app.capabilities.permissions import command_allowed_for_mode
+from app.core.workspaces import resolve_workspace
 from app.plugins import PluginContext, PluginRuntime, ToolSource, load_config
 from app.runtime.audit import BROKER
 from app.runtime.stream_hub import HUB
@@ -51,6 +41,7 @@ from app.tools.shell import (
     available_flavours,
     available_shells,
     detect_flavour,
+    wsl_distros,
 )
 
 _COMMAND_ARG = "command"
@@ -208,9 +199,17 @@ class UnixConfig(ShellConfig):
         default="auto",
         title="Shell 方言",
         description=(
-            "auto 用 PATH 上找到的第一个（bash 优先），**不会**自动选 WSL；"
-            "wsl 表示在 WSL 里跑 /bin/bash，路径会用 /mnt/c/... 的形式翻译；"
+            "auto 优先原生 bash / zsh，没有原生 shell 时才回退到 WSL；"
+            "wsl 表示通过 wsl.exe 在 Linux 发行版里跑 /bin/bash，路径会翻译成 /mnt/c/...；"
             "Git Bash 用 /c/...（把可执行文件指向 Git 的 bash.exe 时会自动按 Git Bash 处理）。"
+        ),
+    )
+    wsl_distro: str = Field(
+        default="",
+        title="WSL 发行版",
+        description=(
+            "仅在 WSL 方言下生效；留空使用默认发行版。可填 `wsl -l -q` 列出的名称，"
+            "例如 Ubuntu。指定发行版会作为独立会话，不与默认发行版共享当前目录。"
         ),
     )
 
@@ -233,11 +232,7 @@ def _schema(name: str, description: str, properties: dict[str, Any], required: l
 
 def _workspace_root(context: Any) -> Path:
     raw = getattr(getattr(context, "settings", None), "active_workspace", None)
-    if raw:
-        candidate = Path(raw).expanduser()
-        if candidate.is_dir():
-            return candidate.resolve()
-    return Path.cwd().resolve()
+    return resolve_workspace(raw)
 
 
 def _resolve_target(root: Path, requested: str | None) -> Path:
@@ -273,12 +268,7 @@ def _split_rules(raw: str) -> list[str]:
 
 
 def _rule_regex(rule: str) -> re.Pattern[str]:
-    """``git status*`` -> a full-match pattern; ``*`` is the only wildcard.
-
-    Everything else is escaped: a rule is a literal prefix the user typed, not a
-    regular expression they did not ask to write. Matching is case-insensitive
-    because ``Get-ChildItem`` and ``get-childitem`` are the same command.
-    """
+    """``git status*`` -> a full-match pattern; ``*`` is the only wildcard."""
     parts = [re.escape(piece) for piece in rule.split("*")]
     return re.compile(".*".join(parts), re.IGNORECASE | re.DOTALL)
 
@@ -302,9 +292,8 @@ async def _audit(
 ) -> tuple[str, str | None]:
     """Ask the user about ``command``; return ``(command, rejection_reason)``.
 
-    Returns the possibly-edited command on approval, or a rejection reason the
-    caller must hand back to the model. Everything that can go wrong here
-    (no channel, timeout, missing answer) resolves to "do not run".
+    Anything that goes wrong (no channel, timeout, no answer) resolves to
+    "do not run".
     """
     mode = str(config.audit or "writes").strip().lower()
     if mode == "bypass":
@@ -365,15 +354,14 @@ def _tool_pair(kind: ShellKind, plugin_name: str) -> list[ToolData]:
         "calls, so `cd` here is visible to the next call."
     )
     if kind == "unix" and os.name == "nt":
-        # Worth saying: on Windows ``bash.exe`` is WSL or Git Bash, and native paths fail.
         run_hint += (
-            " On Windows this goes through bash.exe (WSL or Git Bash), so paths "
+            " On Windows this goes through Git Bash or WSL (wsl.exe), so paths "
             "written inside the command must be in that shell's form "
             "(e.g. /mnt/c/... under WSL); the cwd argument is translated for you."
         )
 
     async def run(ctx: Any) -> str:
-        config = await load_config(plugin_name, ShellConfig)
+        config = await load_config(plugin_name, UnixConfig if kind == "unix" else ShellConfig)
         assert isinstance(config, ShellConfig)
         mode = str(getattr(ctx, "access_mode", None) or "workspace")
         if mode == "readonly":
@@ -416,6 +404,7 @@ def _tool_pair(kind: ShellKind, plugin_name: str) -> list[ToolData]:
             config.init_commands,
             _flavour_for(kind, config),
             config.encoding,
+            str(getattr(config, "wsl_distro", "") or ""),
         )
         session.max_output_bytes = config.max_output_kb * 1024
 
@@ -430,7 +419,7 @@ def _tool_pair(kind: ShellKind, plugin_name: str) -> list[ToolData]:
         return result.as_text()
 
     async def status(ctx: Any) -> str:
-        config = await load_config(plugin_name, ShellConfig)
+        config = await load_config(plugin_name, UnixConfig if kind == "unix" else ShellConfig)
         assert isinstance(config, ShellConfig)
         root = _workspace_root(ctx)
         sessions = [item for item in SHELLS.describe() if item["shell"] == kind]
@@ -442,9 +431,10 @@ def _tool_pair(kind: ShellKind, plugin_name: str) -> list[ToolData]:
             else kind in available_shells()
         )
         exe = configured or "(PATH)"
+        flavour = _flavour_for(kind, config)
         lines = [
             f"shell: {kind}",
-            f"flavour: {_flavour_for(kind, config)}",
+            f"flavour: {flavour}",
             f"executable: {exe}",
             f"installed: {'yes' if installed else 'no'}",
             f"flavours_available: {', '.join(available_flavours()) or 'none'}",
@@ -454,6 +444,11 @@ def _tool_pair(kind: ShellKind, plugin_name: str) -> list[ToolData]:
             f"encoding: {config.encoding}",
             f"timeout: {config.default_timeout:.0f}s (cap {config.max_timeout:.0f}s)",
         ]
+        if kind == "unix" and flavour == "wsl":
+            distros = ", ".join(wsl_distros()) or "none"
+            selected = str(getattr(config, "wsl_distro", "") or "") or "(default)"
+            lines.append(f"wsl_distro: {selected}")
+            lines.append(f"wsl_distros_available: {distros}")
         if str(config.audit) == "rules":
             # Counts only: the rule list can be long, and tokens are charged for it.
             lines.append(f"auto_approve_rules: {len(_split_rules(config.auto_approve))}")

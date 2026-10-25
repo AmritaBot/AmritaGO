@@ -1,23 +1,10 @@
 """Plugin runtime with generator-based lifecycles.
 
-Plugins extend the agent without touching process-wide registries. A plugin is
-an ordinary callable that receives a :class:`PluginContext`, declares what it
-contributes, and yields once to mark the end of setup::
-
-    async def notes_plugin(ctx: PluginContext):
-        ctx.tool(ToolSource(name="notes", build=build_note_tools))
-        ctx.on("run_end", log_usage)
-
-        yield
-
-        release_notes_cache()
-
-Registration (``context.apply``) only records the plugin. The agent decides
-when to run it, and each activation collects declarations into a fresh,
-immutable :class:`PluginSnapshot`; nothing is written to a global registry by
-the plugin itself. Unloading runs the code after ``yield``. In developer mode
-the runtime deliberately loads, unloads and loads again, comparing the two
-snapshots so an activation that leaks state is reported immediately.
+A plugin is a callable that receives a :class:`PluginContext`, declares tools,
+MCP servers, workflows and hooks, then yields once to mark the end of setup;
+code after the ``yield`` runs on unload. Registration only records the plugin —
+each activation collects declarations into a fresh immutable
+:class:`PluginSnapshot`.
 """
 
 from __future__ import annotations
@@ -119,7 +106,7 @@ class PluginSnapshot:
     hooks: Mapping[str, tuple[HookHandler, ...]] = field(
         default_factory=lambda: MappingProxyType({})
     )
-    #: plugin name → the model its settings validate against.
+    #: plugin name -> the model its settings validate against.
     configs: Mapping[str, type[BaseModel]] = field(default_factory=lambda: MappingProxyType({}))
 
     def signature(self) -> tuple[Any, ...]:
@@ -579,15 +566,10 @@ def _bundled(spec: _PluginSpec) -> bool:
 async def sync_plugin_states(settings: Any) -> Any:
     """Make ``settings.enabled_plugins`` authoritative, then persist a change.
 
-    First run (``enabled_plugins is None``) enables the bundled plugins only:
-    anything dropped into ``~/.amrita/plugins`` before the first start is new
-    and therefore stays off until the user turns it on. An existing settings
-    file predates the allow-list and keeps all currently registered plugins
-    enabled, so upgrading does not silently switch anything off. Either way a
-    plugin added later defaults to disabled, because it is simply absent from
-    the persisted allow-list.
-
-    Legacy ``disabled_plugins`` is migrated once and then cleared.
+    ``None`` means "no allow-list yet": a fresh install enables only bundled
+    plugins, an existing settings file keeps whatever is currently registered.
+    Afterwards anything absent from the list stays off, so plugins added later
+    default to disabled. Legacy ``disabled_plugins`` is migrated once.
     """
     from app.core.settings import save_settings
 
@@ -631,9 +613,8 @@ async def sync_plugin_states(settings: Any) -> Any:
 def load_external_plugins(runtime: PluginRuntime, directory: Path | None = None) -> int:
     """Import ``~/.amrita/plugins/*.py`` and register their ``plugin`` hook.
 
-    Loading is deliberately separate from activation: importing a module is a
-    one-time filesystem action, while activation can be repeated (and is
-    repeated in developer mode) without re-running module top-level code.
+    Separate from activation: importing is a one-time filesystem action, while
+    activation can be repeated without re-running module top-level code.
     """
     root = directory or PATHS.plugins
     root.mkdir(parents=True, exist_ok=True)
@@ -643,9 +624,8 @@ def load_external_plugins(runtime: PluginRuntime, directory: Path | None = None)
             continue
         module_name = f"amrita_go_plugin_{path.stem}"
         try:
-            # Always build a fresh module: ``importlib.reload`` cannot find a
-            # spec for file-loaded modules and the reload button must pick up
-            # edits, not keep the old function objects.
+            # A fresh module every time: ``importlib.reload`` cannot find a spec
+            # for file-loaded modules.
             module_spec = importlib.util.spec_from_file_location(module_name, path)
             if module_spec is None or module_spec.loader is None:
                 raise ImportError("cannot build an import spec")

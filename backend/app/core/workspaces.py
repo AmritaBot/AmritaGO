@@ -1,9 +1,8 @@
 """Workspace registry.
 
-A workspace is just a directory the user can point the agent at. Keeping the
-list here (rather than deriving it from the filesystem) means the switcher only
-offers directories the user actually chose, and the backend can validate any
-path a client sends before it is used for skill/agent discovery.
+A workspace is a directory the user can point the agent at. The list lives in
+``workspaces.json`` so the switcher only offers directories the user chose and
+the backend can validate any client-supplied path.
 """
 
 from __future__ import annotations
@@ -24,6 +23,19 @@ class Workspace(BaseModel):
 
 
 _EXCLUDED = {"/", str(Path.home())}
+
+
+def resolve_workspace(raw: str | None) -> Path:
+    """The directory tools work in: the configured one, else the project root.
+
+    Deliberately not ``Path.cwd()``: the server usually starts inside
+    ``backend/``, so cwd would silently become "the workspace".
+    """
+    if raw:
+        candidate = Path(raw).expanduser()
+        if candidate.is_dir():
+            return candidate.resolve()
+    return PROJECT_ROOT
 
 
 def _entry(path: Path) -> Workspace:

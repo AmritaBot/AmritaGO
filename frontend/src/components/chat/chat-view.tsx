@@ -37,7 +37,7 @@ import type { ModelOption } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 
-/** Least → most permissive; mirrors the backend's ordering. */
+/** Least -> most permissive; mirrors the backend's ordering. */
 const ACCESS_ORDER: Permission[] = ["readonly", "workspace", "full"];
 
 /**
@@ -520,7 +520,7 @@ export function ChatView({
   const guard: GuardState = useMemo(() => {
     if (models.length === 0) {
       return {
-        blocked: "还没有配置模型。先到设置 → 模型 里添加 Provider 和模型。",
+        blocked: "还没有配置模型。先到设置 -> 模型 里添加 Provider 和模型。",
         needsModel: true,
       };
     }

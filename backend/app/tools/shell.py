@@ -1,30 +1,11 @@
 """Local shell execution for the agent.
 
-Completion is reported by the shell itself, using the OSC 133/633 shell
-integration alphabet (the one VSCode and iTerm2 read):
+Every call is a fresh shell process that starts where the previous one ended;
+the directory is kept in a state file and refreshed from the shell's own OSC 7
+report. Completion comes from the OSC 133/633 markers the script emits, with a
+per-session nonce so command output cannot forge an exit code.
 
-* ``133;A`` prompt start, ``133;B`` command start, ``133;C`` output start —
-  emitted so a future PTY-backed session can slice prompt / command / output
-  without guessing, and so the markers above are already in place.
-* ``633;D;<exit>;<nonce>`` — command finished, with a per-session nonce. A
-  command that happens to print something marker-shaped cannot forge completion,
-  because the nonce never leaves the runner.
-* ``7;file://host/path`` — the working directory after the command, reported by
-  the shell itself rather than assumed by us.
-
-``mcp-ssh-reloaded`` is the reference for this shape: markers over a PTY plus a
-session that remembers its directory, its shell and its recent commands. There
-is no such thing as "OSC 266" — the terminal-integration sequences in use are
-OSC 7 (cwd), OSC 133 (semantic prompt) and OSC 633 (VSCode's extension of it).
-
-The working directory persists between calls: each run starts in the directory
-the previous one finished in, recorded in a small state file *and* refreshed
-from OSC 7. A fresh process per call is deliberate — a shell left running
-between calls can block forever on a prompt nothing answers, and a timeout
-would then kill the wrong thing.
-
-Output is capped and spilled to ``~/.amrita/shell``, so a runaway command costs
-disk instead of memory.
+Output is capped and spilled to ``~/.amrita/shell``.
 """
 
 from __future__ import annotations
@@ -34,10 +15,12 @@ import hashlib
 import os
 import re
 import shutil
+import subprocess
 import tempfile
 import time
 import uuid
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
@@ -71,16 +54,61 @@ class ShellUnavailable(RuntimeError):
     """Raised when the requested shell executable is not installed."""
 
 
-def _wsl_executable() -> str | None:
-    """``wsl.exe``, or the distro-less ``bash.exe`` shim as a fallback.
+def _is_wsl_launcher(path: str | None) -> bool:
+    """True for ``wsl.exe`` and the legacy ``System32\\bash.exe`` shim."""
+    if not path:
+        return False
+    candidate = Path(path)
+    name = candidate.name.lower()
+    if name == "wsl.exe":
+        return True
+    return name == "bash.exe" and candidate.parent.name.lower() == "system32"
 
-    ``wsl.exe`` is preferred: it accepts ``--exec`` and works from any working
-    directory, while the legacy ``System32\\bash.exe`` requires a configured
-    default distro and shows a warning on first use.
-    """
+
+def _wsl_executable() -> str | None:
+    """``wsl.exe``, or the legacy ``System32\\bash.exe`` shim as a fallback."""
     if os.name != "nt":
         return None
-    return shutil.which("wsl") or shutil.which("bash")
+    wsl = shutil.which("wsl")
+    if wsl:
+        return wsl
+    bash = shutil.which("bash")
+    return bash if _is_wsl_launcher(bash) else None
+
+
+@lru_cache(maxsize=1)
+def wsl_distros() -> tuple[str, ...]:
+    """Installed WSL distributions, or ``()`` when WSL is unusable.
+
+    ``wsl.exe -l -q`` writes UTF-16LE on most builds and UTF-8 when redirected
+    on others, so both are accepted.
+    """
+    exe = _wsl_executable()
+    if not exe:
+        return ()
+    try:
+        completed = subprocess.run(
+            [exe, "-l", "-q"],
+            capture_output=True,
+            timeout=10,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ()
+    if completed.returncode != 0:
+        return ()
+    raw = completed.stdout
+    text = (
+        raw.decode("utf-16-le", "ignore") if b"\x00" in raw[:32] else raw.decode("utf-8", "replace")
+    )
+    names = [line.strip().strip("\x00\ufeff") for line in text.splitlines()]
+    return tuple(name for name in names if name)
+
+
+def wsl_available() -> bool:
+    """Whether an installed distro can actually run commands."""
+    return bool(wsl_distros())
 
 
 def executable(kind: ShellKind, flavour: str | None = None) -> str | None:
@@ -93,14 +121,12 @@ def executable(kind: ShellKind, flavour: str | None = None) -> str | None:
         return shutil.which(flavour)
     for candidate in UNIX_FLAVOURS:
         found = shutil.which(candidate)
-        if found:
+        # ``System32\\bash.exe`` is WSL, not a native bash; auto picks WSL below.
+        if found and not _is_wsl_launcher(found):
             return found
+    if wsl_available():
+        return _wsl_executable()
     return None
-
-
-def wsl_available() -> bool:
-    """Whether a WSL bash can be started at all."""
-    return _wsl_executable() is not None
 
 
 def available_flavours() -> list[str]:
@@ -108,29 +134,31 @@ def available_flavours() -> list[str]:
     out: list[str] = []
     if os.name == "nt" and (shutil.which("pwsh") or shutil.which("powershell")):
         out.append("pwsh")
-    out.extend(candidate for candidate in UNIX_FLAVOURS if shutil.which(candidate))
+    for candidate in UNIX_FLAVOURS:
+        found = shutil.which(candidate)
+        if found and not _is_wsl_launcher(found):
+            out.append(candidate)
     if wsl_available():
         out.append("wsl")
     return out
 
 
 def detect_flavour(kind: ShellKind) -> ShellFlavour:
-    """Which concrete program a family session will spawn."""
+    """The concrete program a family session will spawn."""
     if kind == "pwsh":
         return "pwsh"
     for candidate in UNIX_FLAVOURS:
-        if shutil.which(candidate):
+        found = shutil.which(candidate)
+        if found and not _is_wsl_launcher(found):
             return candidate
+    if wsl_available():
+        return "wsl"
     return "bash"
 
 
 def available_shells() -> list[ShellKind]:
     # ``unix`` is available when any POSIX bash can run, WSL included.
-    return [
-        kind
-        for kind in ("pwsh", "unix")
-        if executable(kind) or (kind == "unix" and wsl_available())
-    ]
+    return [kind for kind in ("pwsh", "unix") if executable(kind)]
 
 
 def detect_kind() -> ShellKind:
@@ -284,12 +312,7 @@ def _uri_to_cwd(value: str, kind: ShellKind) -> str | None:
 def strip_marker(
     text: str, nonce: str, kind: ShellKind = "unix"
 ) -> tuple[str, int | None, str | None]:
-    """Remove our OSC markers, returning the text, exit code and final cwd.
-
-    Only the sequences we emit are consumed. An unterminated one is dropped
-    rather than passed through: it would otherwise leave a stray ``ESC]`` in
-    the model's output.
-    """
+    """Remove our OSC markers, returning the text, exit code and final cwd."""
     esc = "\x1b"
     pieces: list[str] = []
     exit_code: int | None = None
@@ -340,6 +363,8 @@ class ShellSession:
     init_commands: str = ""
     #: Codec for the process output; UTF-8 unless the shell emits the OEM page.
     output_encoding: str = "utf-8"
+    #: WSL distribution name; empty means the default distro.
+    wsl_distro: str = ""
     nonce: str = field(default_factory=lambda: uuid.uuid4().hex[:16])
     #: Stable handle the UI uses to reset or inspect one session.
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
@@ -351,18 +376,12 @@ class ShellSession:
     @property
     def state_file(self) -> Path:
         digest = hashlib.sha1(
-            f"{self.kind}:{self.flavour}:{self.cwd}:{self.executable_path}".encode()
+            f"{self.kind}:{self.flavour}:{self.cwd}:{self.executable_path}:{self.wsl_distro}".encode()
         ).hexdigest()[:12]
         return state_dir() / f"{self.kind}-{digest}.cwd"
 
     def resolved_executable(self) -> str | None:
-        """The configured path if it exists, else the shell on ``PATH``.
-
-        A configured path that does not exist is a configuration error the user
-        needs to see, not a silent fallback: on Windows ``/bin/bash`` only
-        exists *inside* WSL, so quietly running ``C:\\Windows\\system32\\bash.exe``
-        instead would look like the setting was ignored.
-        """
+        """The configured path if it exists, else the shell on ``PATH``."""
         configured = self.executable_path.strip().strip('"')
         if not configured:
             return executable(self.kind, self.flavour or None)
@@ -392,6 +411,7 @@ class ShellSession:
             "id": self.id,
             "shell": self.kind,
             "flavour": self.flavour or detect_flavour(self.kind),
+            "wsl_distro": self.wsl_distro,
             "path_style": self.path_style,
             "cwd": self.display_cwd(),
             "root": str(self.cwd),
@@ -407,22 +427,15 @@ class ShellSession:
 
     @property
     def path_style(self) -> str:
-        """``wsl`` or ``msys``; meaningless (and unused) for pwsh.
-
-        Derived from the flavour *and* the executable path: a user who pins
-        ``...\\Git\\bin\\bash.exe`` has chosen MSYS paths even if the flavour
-        still says ``auto``.
-        """
+        """``wsl`` or ``msys``; unused for pwsh."""
         if self.kind != "unix":
             return "native"
         return bash_style_for(self.flavour, self.executable_path)
 
     def _saved_dir(self) -> str | None:
-        """The directory the previous run ended in, in that shell's own form.
+        """The directory the previous run ended in, in the shell's own form.
 
-        Kept verbatim rather than normalised: a WSL ``bash`` may ``cd /tmp``,
-        which has no Windows equivalent, and converting it would silently send
-        the next command back to the workspace root.
+        Kept verbatim: a WSL ``cd /tmp`` has no Windows equivalent.
         """
         try:
             saved = self.state_file.read_text(encoding="utf-8").strip()
@@ -438,7 +451,8 @@ class ShellSession:
                 return saved
             if self.kind == "pwsh" and not saved.startswith("/"):
                 return saved
-        return shell_path(self.flavour or "bash", self.cwd, self.path_style)
+        # Kind stays "bash"; "wsl" would skip the Windows -> /mnt/... translation.
+        return shell_path("bash", self.cwd, self.path_style)
 
     def display_cwd(self) -> str:
         """A path a Python caller can reason about."""
@@ -491,9 +505,14 @@ class ShellSession:
                     ).encode("utf-8")
                 )
                 script_arg = shell_path("bash", script_path, self.path_style)
-                if self.flavour == "wsl":
+                if Path(exe).name.lower() == "wsl.exe":
                     # ``wsl.exe`` needs ``--exec`` and the script path in WSL form.
-                    argv = [exe, "--exec", "bash", "--noprofile", "--norc", script_arg]
+                    argv = [exe]
+                    if self.wsl_distro.strip():
+                        argv += ["-d", self.wsl_distro.strip()]
+                    argv += ["--exec", "bash", "--noprofile", "--norc", script_arg]
+                elif _is_wsl_launcher(exe):
+                    argv = [exe, "--noprofile", "--norc", script_arg]
                 else:
                     argv = [exe, "--noprofile", "--norc", script_arg]
             else:
@@ -599,17 +618,14 @@ class ShellSession:
 
 
 class ShellManager:
-    """One logical session per ``(kind, cwd, executable)``.
+    """One logical session per ``(kind, flavour, cwd, executable, distro)``.
 
-    "Logical" because the working directory survives while the process does
-    not: every run is a fresh interpreter that starts where the previous one
-    finished. Pointing a plugin at a different executable is therefore a
-    different session, not a reconfiguration of the old one — otherwise the
-    saved directory of, say, WSL bash would be handed to Git Bash.
+    The directory survives while the process does not: every run is a fresh
+    interpreter that starts where the previous one finished.
     """
 
     def __init__(self) -> None:
-        self._sessions: dict[tuple[str, str, str, str], ShellSession] = {}
+        self._sessions: dict[tuple[str, str, str, str, str], ShellSession] = {}
         self._lock = asyncio.Lock()
 
     async def get(
@@ -620,9 +636,11 @@ class ShellManager:
         init_commands: str = "",
         flavour: str = "",
         encoding: str = "utf-8",
+        wsl_distro: str = "",
     ) -> ShellSession:
         resolved_flavour = flavour or detect_flavour(kind)
-        key = (kind, resolved_flavour, str(cwd), executable_path.strip())
+        distro = wsl_distro.strip()
+        key = (kind, resolved_flavour, str(cwd), executable_path.strip(), distro)
         async with self._lock:
             session = self._sessions.get(key)
             if session is None:
@@ -633,6 +651,7 @@ class ShellManager:
                     executable_path=executable_path,
                     init_commands=init_commands,
                     output_encoding=encoding,
+                    wsl_distro=distro,
                 )
                 self._sessions[key] = session
             else:
@@ -642,12 +661,18 @@ class ShellManager:
             return session
 
     async def reset(
-        self, kind: ShellKind, cwd: Path, executable_path: str = "", flavour: str = ""
+        self,
+        kind: ShellKind,
+        cwd: Path,
+        executable_path: str = "",
+        flavour: str = "",
+        wsl_distro: str = "",
     ) -> None:
         resolved_flavour = flavour or detect_flavour(kind)
         async with self._lock:
             session = self._sessions.pop(
-                (kind, resolved_flavour, str(cwd), executable_path.strip()), None
+                (kind, resolved_flavour, str(cwd), executable_path.strip(), wsl_distro.strip()),
+                None,
             )
         if session is not None:
             session.state_file.unlink(missing_ok=True)
@@ -698,4 +723,5 @@ __all__ = [
     "state_dir",
     "strip_marker",
     "wsl_available",
+    "wsl_distros",
 ]

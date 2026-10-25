@@ -1,19 +1,8 @@
-"""Path translation between Windows and the shells that can run here.
+"""Path translation between Windows and the POSIX shells that can run here.
 
-On Windows three different ``bash`` executables exist, and they disagree about
-what a path looks like:
-
-* **Git Bash / MSYS2** — ``C:\\Users\\me`` is ``/c/Users/me``;
-* **WSL** (``C:\\Windows\\System32\\bash.exe``) — it is ``/mnt/c/Users/me``;
-* a POSIX host — no translation at all.
-
-Handing the wrong form to the wrong one fails with "No such file or directory",
-so the style is explicit rather than guessed at the last moment. The caller knows
-which flavour it started; this module only converts.
-
-``wsl`` is the default because it is what ``shutil.which('bash')`` finds first on
-a machine with WSL installed, and because the failure it causes (a command run in
-the wrong filesystem) is the more confusing of the two.
+``C:\\Users\\me`` is ``/c/Users/me`` for Git Bash and ``/mnt/c/Users/me`` for
+WSL; a POSIX host needs no translation. The caller knows which flavour it
+started, so the style is passed in rather than guessed here.
 """
 
 from __future__ import annotations
@@ -24,7 +13,7 @@ from pathlib import Path
 
 _DRIVE = re.compile(r"^([A-Za-z]):[\\\\/]?(.*)$")
 
-#: Which Windows→POSIX mapping a bash implementation expects.
+#: Which Windows->POSIX mapping a bash implementation expects.
 PosixStyle = str  # "wsl" | "msys"
 
 

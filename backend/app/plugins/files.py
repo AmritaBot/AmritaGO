@@ -1,15 +1,9 @@
 """Workspace file IO tools.
 
-Until now the only way to touch a file was to shell out, which meant every read
-cost a process and every write depended on the shell's quoting. These tools are
-the boring, direct version: read, write, list, search — all confined to the
-active workspace by the same resolution rule the shell uses.
-
-Why four tools and not one `file` tool with an `op`: the model picks tools by
-name, and `file_write` being absent in read-only mode is a clearer signal than
-`file(op="write")` failing at runtime. The names also end in `_read` / `_list` /
-`_search`, which is what :func:`app.capabilities.permissions.tool_allowed_for_mode` uses to
-keep them in a read-only run — `file_write` does not match, so it is dropped.
+Read, write, list and search, confined to the active workspace by the same rule
+the shell uses. Four separate tools rather than one ``file`` tool with an
+``op``: an absent ``file_write`` is a clearer read-only signal than a runtime
+failure.
 """
 
 from __future__ import annotations
@@ -27,6 +21,7 @@ from amrita_core.tools.models import (
 )
 from pydantic import BaseModel, Field
 
+from app.core.workspaces import resolve_workspace
 from app.plugins import PluginContext, PluginRuntime, ToolSource, load_config
 
 
@@ -77,11 +72,7 @@ def _schema(name: str, description: str, properties: dict[str, Any], required: l
 
 def _root(context: Any) -> Path:
     raw = getattr(getattr(context, "settings", None), "active_workspace", None)
-    if raw:
-        candidate = Path(raw).expanduser()
-        if candidate.is_dir():
-            return candidate.resolve()
-    return Path.cwd().resolve()
+    return resolve_workspace(raw)
 
 
 def _resolve(root: Path, requested: str | None, allow_outside: bool) -> Path:

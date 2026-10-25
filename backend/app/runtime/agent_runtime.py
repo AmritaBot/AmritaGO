@@ -1,22 +1,11 @@
 """Agent runtime: wires AmritaCore backends to the on-disk session store.
 
-The agent never writes to a socket. :func:`run_turn` publishes events into a
-:class:`~.stream_hub.StreamChannel`, and the WebSocket handler drains that
-channel. A dropped connection therefore cannot fail a run, and reconnecting
-replays the buffer from offset 0.
+:func:`run_turn` never writes to a socket: it publishes events into a
+:class:`~.stream_hub.StreamChannel` that the WebSocket handler drains, so a
+dropped connection cannot fail a run and reconnecting replays the buffer.
 
-Tools, MCP clients and the workflow all arrive through the
-:class:`~.capabilities.CapabilityCatalog` composed from the plugin snapshot, so
-an agent preset only filters what already exists; nothing here registers into
-AmritaCore's global managers.
-
-Event shapes (``type`` field):
-  ``start``     – run started, carries the resolved plan
-  ``delta``     – answer text chunk (typewriter effect)
-  ``reasoning`` – reasoning/thinking chunk
-  ``meta``      – structured notice (tool call, step, skill trigger, …)
-  ``error``     – run failed
-  ``done``      – run finished, carries the turn's usage and session totals
+Event ``type`` values: ``start``, ``delta``, ``reasoning``, ``meta``,
+``error``, ``done``.
 """
 
 from __future__ import annotations

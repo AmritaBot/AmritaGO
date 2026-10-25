@@ -1,30 +1,9 @@
 """Encryption at rest for provider credentials.
 
-The key that protects API keys is **generated on this machine and never ships
-with the program**. There is no default, no placeholder and no fallback
-constant: a key that exists in the source tree is the same as no encryption at
-all, because everyone who can read the code can read the credentials.
-
-Three places a key can come from, in this order:
-
-1. ``AMRITA_GO_SECRET`` — explicit base64 key material, for a container, a
-   password manager, or an unlock-on-boot unit. Nothing is written to disk.
-2. **The OS keyring** — Linux and macOS desktops have a secret service; the key
-   is stored there, sealed by the session (libsecret / KWallet / Keychain), so
-   it is not readable by another user and not stored in a file at all.
-3. ``secret.key`` beside the data — created on first use with mode ``0600`` on
-   POSIX and, on Windows, an ACL that grants only the current account. This is
-   the fallback for headless Linux, Windows, and container images.
-
-Precedence is fixed and checked in that order, which makes the choice *sticky*:
-an install that created its key in the keyring keeps finding it there (no file
-exists), and an install that has ``secret.key`` never silently starts reading a
-different key from a keyring that happened to appear later. That matters more
-than elegance — a key swap makes every stored credential undecryptable.
-
-The file format is deliberately boring: one Fernet token per file. A corrupt or
-undecryptable file is reported, never silently replaced — losing every API key
-because a file failed to parse would be worse than refusing to start.
+The Fernet key ships with nothing: ``AMRITA_GO_SECRET`` wins, then the OS
+keyring, then ``secret.key`` beside the data (mode 0600, owner-only ACL on
+Windows). The precedence is sticky — reading a different key later would make
+stored credentials undecryptable. A corrupt file is reported, never replaced.
 """
 
 from __future__ import annotations
@@ -265,7 +244,7 @@ def _env_key() -> bytes | None:
 def load_key(data_dir: Path) -> bytes:
     """The Fernet key for this data directory, creating it on first use.
 
-    Order is fixed (env → keyring → file) so the answer never changes between
+    Order is fixed (env -> keyring -> file) so the answer never changes between
     runs; see the module docstring for why that matters.
     """
     env = _env_key()
