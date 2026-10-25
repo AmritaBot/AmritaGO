@@ -97,8 +97,10 @@ export interface AppSettings {
   debug: boolean;
   /** What a run does when it spends its tool-call budget. */
   tool_limit_policy: "graceful" | "ask";
-  /** Extra *refusal* rounds granted to a cut-off run (graceful wind-down). */
+  /** Rounds appended to the *same* turn each time the user answers "继续迭代". */
   tool_limit_extension: number;
+  /** Wind-down rounds granted to a cut-off run (graceful close-out). */
+  tool_limit_refusal_rounds: number;
   /** Seconds the parked run waits for an answer before winding down. */
   tool_limit_timeout: number;
   updated_at: number;
@@ -411,15 +413,16 @@ export interface ConfirmRequest {
 /**
  * A run that spent its tool-call budget is asking whether to keep going.
  *
- * Answering ``continue`` starts a **new turn** with a normal budget; anything
- * else (``stop``, a timeout, closing the tab) winds this one down gracefully.
- * There is deliberately no "extra rounds" field: continuing is a new turn, not
- * a longer one.
+ * Answering ``continue`` appends `extension` rounds to **this turn**, so the
+ * run picks up where it stopped; ``graceful`` winds it down and ``abort`` cuts
+ * it off. A timeout or a closed tab is treated as ``graceful``.
  */
 export interface ToolLimitRequest {
   request_id: string;
   /** Rounds the run was allowed before asking. */
   budget: number;
+  /** Rounds "继续迭代" would append to this turn. */
+  extension: number;
   /** Seconds until the question is treated as "graceful wind-down". */
   timeout: number;
 }
@@ -849,6 +852,16 @@ export const api = {
     }>(`/sessions/${id}/usage`),
   clearSession: (id: string) =>
     request<{ ok: boolean }>(`/sessions/${id}/clear`, { method: "POST" }),
+  /** Fold older history into the summary now, instead of waiting for the trigger. */
+  compactSession: (id: string) =>
+    request<{
+      compacted: boolean;
+      folded: number;
+      kept: number;
+      summary_chars: number;
+      messages: number;
+      detail: string;
+    }>(`/sessions/${id}/compact`, { method: "POST" }),
 
   // shells
   listShells: () =>

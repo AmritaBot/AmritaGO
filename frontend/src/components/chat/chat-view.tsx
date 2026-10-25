@@ -381,18 +381,19 @@ function MessageBubble({
  * and says so. Choosing one of those for the user was the old behaviour, and it
  * was wrong in both directions.
  *
- * "继续迭代" starts a **new turn** rather than extending this one, so the copy
- * promises that and nothing else — a budget the user can raise on demand would
- * not be a budget.
+ * "继续迭代" appends rounds to *this* turn, so the copy says how many and
+ * promises the agent keeps working with its context intact.
  */
 function ToolLimitCard({
   budget,
+  extension,
   timeout,
   onContinue,
   onGraceful,
   onAbort,
 }: {
   budget: number;
+  extension: number;
   timeout: number;
   onContinue: () => void;
   onGraceful: () => void;
@@ -407,7 +408,7 @@ function ToolLimitCard({
             <p className="text-sm font-medium">继续迭代？</p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
               本轮的工具调用预算（{budget} 轮）已经用完，Agent 停在这里等你决定。
-              继续会先按已有信息收尾，然后自动开启<strong>新一轮</strong>接着做；
+              继续会在<strong>本轮</strong>内追加 {extension} 轮，模型带着现有上下文接着做；
               优雅收尾让模型把已经查到的东西写完；直接中断则立刻停在这里，
               不再让模型多说一轮。
               {timeout > 0 &&
@@ -417,9 +418,9 @@ function ToolLimitCard({
               <Button
                 size="sm"
                 onClick={onContinue}
-                title="本轮收尾后自动开启新一轮，预算重新计算"
+                title={`本轮再追加 ${extension} 轮工具调用，上下文不丢`}
               >
-                继续迭代（开新一轮）
+                继续迭代（本轮 +{extension} 轮）
               </Button>
               <Button
                 size="sm"
@@ -516,6 +517,31 @@ export function ChatView({
   }, [agents, activeAgent]);
 
   const effectivePermission = narrowPermission(allowedPermissions, permission);
+
+  /**
+   * ``/compact``: fold older history now.
+   *
+   * The backend refuses while a turn is live (it holds its own context copy),
+   * so the refusal is shown as-is instead of being retried.
+   */
+  const compactNow = async () => {
+    try {
+      const result = await api.compactSession(sessionId);
+      if (result.compacted) {
+        toast.success(
+          `已把较早的 ${result.folded} 条消息折叠成摘要（${result.summary_chars} 字），` +
+            `保留最近 ${result.kept} 条`,
+        );
+        void reload();
+        return;
+      }
+      toast.info(result.detail || "没有可折叠的历史");
+    } catch (error) {
+      // The backend's reason is already a sentence ("这一轮还在跑…"); prefixing
+      // it with "压缩失败" would read as a bug rather than a guard.
+      toast.error(String(error).replace(/^Error:\s*/, ""));
+    }
+  };
 
   const guard: GuardState = useMemo(() => {
     if (models.length === 0) {
@@ -700,6 +726,7 @@ export function ChatView({
         {limitRequest && (
           <ToolLimitCard
             budget={limitRequest.budget}
+            extension={limitRequest.extension}
             timeout={limitRequest.timeout}
             onContinue={() => resolveLimit("continue")}
             onGraceful={() => resolveLimit("graceful")}
@@ -734,6 +761,7 @@ export function ChatView({
           onSelectPermission={setPermission}
           onCommand={(name) => {
             if (name === "clear") onClearSession();
+            if (name === "compact") void compactNow();
             if (name === "model") onOpenSettings("providers");
             if (name === "blocked") toast.error(guard.blocked ?? "无法发送");
           }}

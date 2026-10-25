@@ -2,8 +2,8 @@
 
 Transport only: publish an event and wait for a frame on the chat socket; the
 policy belongs to the strategy that spent the budget. Answers are ``continue``
-(a new turn starts afterwards), ``graceful`` (wind down and answer) and
-``abort`` (drop the turn). A timeout, a stop or a missing channel resolve to
+(append rounds to this turn), ``graceful`` (wind down and answer) and ``abort``
+(drop the turn). A timeout, a stop or a missing channel resolve to
 ``graceful``.
 """
 
@@ -17,7 +17,7 @@ from typing import Any, Literal
 
 from amrita_sense.logging import logger
 
-# Browser answers: ``continue`` starts a new turn, ``graceful`` winds down, ``abort`` stops it.
+# Browser answers: ``continue`` appends rounds, ``graceful`` winds down, ``abort`` stops it.
 Action = Literal["continue", "graceful", "abort"]
 
 # Every action the browser may send; anything else is treated as ``graceful``.
@@ -33,6 +33,7 @@ class _Pending:
         default_factory=lambda: asyncio.get_event_loop().create_future()
     )
     budget: int = 0
+    extension: int = 0
     created_at: float = field(default_factory=time.time)
 
 
@@ -44,7 +45,12 @@ class LimitGate:
 
     def pending(self) -> list[dict[str, Any]]:
         return [
-            {"id": key, "budget": item.budget, "created_at": item.created_at}
+            {
+                "id": key,
+                "budget": item.budget,
+                "extension": item.extension,
+                "created_at": item.created_at,
+            }
             for key, item in self._pending.items()
         ]
 
@@ -53,12 +59,13 @@ class LimitGate:
         channel: Any,
         *,
         budget: int,
+        extension: int = 0,
         timeout: float = DEFAULT_TIMEOUT,
     ) -> str:
         """Publish the question and wait for one of :data:`ACTIONS`."""
         request_id = uuid.uuid4().hex
         loop = asyncio.get_running_loop()
-        pending = _Pending(future=loop.create_future(), budget=budget)
+        pending = _Pending(future=loop.create_future(), budget=budget, extension=extension)
         self._pending[request_id] = pending
         try:
             await channel.publish(
@@ -66,6 +73,7 @@ class LimitGate:
                     "type": "limit",
                     "request_id": request_id,
                     "budget": budget,
+                    "extension": extension,
                     "timeout": timeout,
                 }
             )

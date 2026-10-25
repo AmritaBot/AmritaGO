@@ -17,11 +17,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArchiveIcon,
   ArrowUpIcon,
   CheckIcon,
   ChevronDownIcon,
   CircleAlertIcon,
-  CircleIcon,
   FileTextIcon,
   FolderIcon,
   FolderPlusIcon,
@@ -33,6 +33,7 @@ import {
   ShieldAlertIcon,
   SquareIcon,
   TerminalIcon,
+  Trash2Icon,
   XIcon,
 } from "lucide-react";
 
@@ -86,7 +87,7 @@ export interface CommandOption {
   name: string;
   title: string;
   description: string;
-  icon?: "compact" | "permission" | "model" | "export" | "feedback" | "file";
+  icon?: "compact" | "clear" | "permission" | "model" | "export" | "feedback" | "file";
 }
 
 const PERMISSIONS: Record<
@@ -103,7 +104,8 @@ const PERMISSIONS: Record<
 };
 
 const COMMAND_ICONS = {
-  compact: CircleIcon,
+  compact: ArchiveIcon,
+  clear: Trash2Icon,
   permission: ShieldIcon,
   model: TerminalIcon,
   export: ArrowUpIcon,
@@ -187,16 +189,23 @@ export function Composer({
         icon: "permission",
       },
       {
+        name: "compact",
+        title: "压缩上下文",
+        description: "把较早的消息折叠成摘要，腾出上下文空间",
+        icon: "compact",
+      },
+      {
         name: "clear",
         title: "清空",
         description: "清空当前会话",
-        icon: "compact",
+        icon: "clear",
       },
     ],
     [],
   );
 
-  /** ``/xxx`` at the very start of the input opens the palette. */  const slashQuery = useMemo(() => {
+  /** ``/xxx`` at the very start of the input opens the palette. */
+  const slashQuery = useMemo(() => {
     const match = /^\/([a-zA-Z\u4e00-\u9fa5]*)$/.exec(draft.trim());
     return match ? match[1].toLowerCase() : null;
   }, [draft]);

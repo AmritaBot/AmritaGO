@@ -545,15 +545,6 @@ async def run_turn(
         )
 
 
-# Operator instruction for "continue": the budget ran out, not the work.
-CONTINUE_PROMPT = (
-    "Continue the task you were working on. The previous turn ended because it "
-    "reached its tool-call budget, not because the work was finished. Pick up "
-    "from the current state of the workspace, do not repeat steps that already "
-    "succeeded, and report what is still outstanding if you cannot finish."
-)
-
-
 async def run_once(
     *, session_id: str, user_input: str, settings: AppSettings, preset: ModelPreset
 ) -> str:
@@ -573,7 +564,6 @@ async def run_once(
 
 
 __all__ = [
-    "CONTINUE_PROMPT",
     "SessionAbilityBackend",
     "SessionMemoryBackend",
     "TurnUsage",

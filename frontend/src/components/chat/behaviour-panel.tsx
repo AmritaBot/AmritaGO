@@ -7,12 +7,13 @@
  *   rounds the model gets afterwards — rounds where its tool requests are
  *   answered with a refusal so it can close with what it already knows, instead
  *   of being cut off mid-sentence.
- * - **挂起并询问** also ends the turn, but first asks the user. Answering
- *   "继续迭代" starts a **new turn** with a *normal* budget; it does not extend
- *   the current one. A budget that can be raised on demand is not a budget, and
- *   the conversation state belongs to a turn, not to an ever-growing loop.
+ * - **挂起并询问** also stops at the budget, but first asks the user. Answering
+ *   "继续迭代" appends `tool_limit_extension` rounds to **this** turn, so the
+ *   agent keeps going with its context intact; the wind-down number still
+ *   applies if the user picks 优雅收尾 instead.
  *
- * That is why there is no "追加轮数" control any more: there is nothing to add.
+ * That is why there are two numbers, not one: one is how much more work a grant
+ * buys, the other is how much room a wind-down gets.
  */
 
 import { useState } from "react";
@@ -37,8 +38,9 @@ export function BehaviourPanel({
   settings: AppSettings;
   onSaved: (settings: AppSettings) => void;
 }) {
+  const [extension, setExtension] = useState(text(settings.tool_limit_extension, 5));
   const [refusalRounds, setRefusalRounds] = useState(
-    text(settings.tool_limit_extension, 5),
+    text(settings.tool_limit_refusal_rounds, 5),
   );
   const [timeout, setTimeoutValue] = useState(text(settings.tool_limit_timeout, 300));
   const [saving, setSaving] = useState(false);
@@ -48,7 +50,8 @@ export function BehaviourPanel({
     try {
       const saved = await api.patchSettings(patch);
       onSaved(saved);
-      setRefusalRounds(text(saved.tool_limit_extension, 5));
+      setExtension(text(saved.tool_limit_extension, 5));
+      setRefusalRounds(text(saved.tool_limit_refusal_rounds, 5));
       setTimeoutValue(text(saved.tool_limit_timeout, 300));
       toast.success("已保存");
     } catch (error) {
@@ -84,7 +87,7 @@ export function BehaviourPanel({
                 value: "ask",
                 title: "挂起并询问",
                 detail:
-                  "先停住，问你要怎么办：继续迭代（开启新一轮，预算重新计）、优雅收尾（不再调工具，用它已有的信息写完）或直接中断。不选或超时按优雅收尾处理。",
+                  "先停住，问你要怎么办：继续迭代（在本轮内追加轮数，上下文不丢）、优雅收尾（不再调工具，用它已有的信息写完）或直接中断。不选或超时按优雅收尾处理。",
               },
             ] as const
           ).map((option) => (
@@ -115,16 +118,29 @@ export function BehaviourPanel({
 
       <section className="flex flex-col gap-3 rounded-lg border border-border p-3">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-sm font-medium">收尾轮数</h3>
-          <InfoHint label="收尾轮数说明">
-            预算用尽后，模型可能还会请求几次工具。这几轮里每个请求都会被拒绝、
-            并把原因返回给模型，而不是真正执行 —— 目的是让它把已有结论说完，
-            而不是被硬生生截断。两种模式下都生效：选「继续迭代」时，本轮同样
-            先按这个预算收尾，然后才开启新一轮。
+          <h3 className="text-sm font-medium">轮数</h3>
+          <InfoHint label="轮数说明">
+            两个数字管的是不同的东西：<strong>追加轮数</strong>是每次回答「继续迭代」
+            时往<strong>本轮</strong>里加的预算，加完模型接着做，上下文一条不丢；
+            <strong>收尾轮数</strong>是模型收尾时还能请求几轮工具 —— 这几轮里每个请求
+            都会被拒绝并把原因返回给模型，让它把已有结论说完，而不是被硬生生截断。
           </InfoHint>
         </div>
 
         <div className="flex flex-wrap items-end gap-4">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="limit-extension">追加轮数</Label>
+            <Input
+              id="limit-extension"
+              type="number"
+              min={1}
+              max={100}
+              value={extension}
+              disabled={saving}
+              onChange={(event) => setExtension(event.target.value)}
+              className="w-28"
+            />
+          </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="limit-refusal">收尾轮数</Label>
             <Input
@@ -159,10 +175,14 @@ export function BehaviourPanel({
               void save(
                 ask
                   ? {
-                      tool_limit_extension: Number(refusalRounds),
+                      tool_limit_extension: Number(extension),
+                      tool_limit_refusal_rounds: Number(refusalRounds),
                       tool_limit_timeout: Number(timeout),
                     }
-                  : { tool_limit_extension: Number(refusalRounds) },
+                  : {
+                      tool_limit_extension: Number(extension),
+                      tool_limit_refusal_rounds: Number(refusalRounds),
+                    },
               )
             }
           >
@@ -171,15 +191,15 @@ export function BehaviourPanel({
         </div>
 
         <p className="text-xs text-muted-foreground">
-          对应 AmritaCore 的 <code>agent_tool_refusal_rounds</code>；
+          收尾轮数对应 AmritaCore 的 <code>agent_tool_refusal_rounds</code>，
           这里设置的值会在每次运行时覆盖核心配置。
           {ask && " 等待上限只用于「挂起并询问」。"}
         </p>
       </section>
 
       <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground">
-        「继续迭代」不会延长本轮的预算：本轮按上面的收尾轮数结束，然后自动开启
-        新一轮，预算按 <code>agent_tool_call_limit</code> 重新计算。
+        「继续迭代」在本轮内追加轮数：预算上限变成「已用轮数 + 追加轮数」，
+        模型直接从当前上下文继续，不新开会话、不重放历史。
         能继续多少次由你决定——服务端不会替你划一个上限。
       </p>
     </div>

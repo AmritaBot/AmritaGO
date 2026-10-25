@@ -414,6 +414,7 @@ export function useChatSocket(sessionId: string | null) {
           setLimitRequest({
             request_id: event.request_id,
             budget: event.budget,
+            extension: event.extension,
             timeout: event.timeout,
           });
           break;
@@ -834,7 +835,7 @@ export function useChatSocket(sessionId: string | null) {
         finishMockLimit({
           onEvent: handleEvent,
           action,
-          budget: request.budget,
+          extension: request.extension,
         });
         return;
       }

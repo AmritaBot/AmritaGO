@@ -28,12 +28,8 @@ class StreamChannel:
         self.done = False
         self.cancelled = False
         self.error: str | None = None
-        # The user answered "继续迭代": a new turn follows once this one winds down.
-        self.continue_requested = False
         # Cut off at the gate: nothing follows, no summary and no last model call.
         self.aborted = False
-        # Turns chained so far, reported for information.
-        self.continuations = 0
         self._buf = StringIO()
         self._lock = asyncio.Lock()
         self._version = 0
@@ -117,6 +113,17 @@ class StreamHub:
     def latest(self, session_id: str) -> StreamChannel | None:
         stream_id = self._latest.get(session_id)
         return self._by_stream.get(stream_id) if stream_id else None
+
+    def busy(self, session_id: str) -> bool:
+        """Whether a turn is still running for this session.
+
+        Used to keep file-level edits (compaction) out of a live run: the run
+        holds its own context copy and would write it back on its way out.
+        """
+        channel = self.latest(session_id)
+        if channel is None or channel.done or channel.cancelled:
+            return False
+        return channel.task is not None and not channel.task.done()
 
     async def forget(self, session_id: str) -> None:
         async with self._lock:

@@ -1,10 +1,13 @@
 """Tool-budget policy on top of AmritaCore's ReAct strategy.
 
 ``graceful`` is AmritaCore's behaviour: wind down and answer, with
-``tool_limit_extension`` rounds. ``ask`` parks the run and lets the browser
-decide — ``continue`` starts a new turn with a normal budget, ``优雅收尾`` winds
-this one down, ``直接中断`` drops it. ``abort`` works by not marking the budget
+``tool_limit_refusal_rounds`` rounds to do it. ``ask`` parks the run and lets
+the browser decide — ``continue`` appends rounds *inside this turn*, ``优雅收尾``
+winds it down, ``直接中断`` drops it. ``abort`` works by not marking the budget
 exhausted, so the loop's guards break out immediately.
+
+The budget belongs to the run's config copy, so a grant is just a larger
+``agent_tool_call_limit``: no new turn, no new channel, no framework-level cap.
 """
 
 from __future__ import annotations
@@ -42,7 +45,7 @@ def for_run(config: AmritaConfig | None = None) -> AmritaConfig:
     copy = (config or get_config()).model_copy(deep=True)
     try:
         copy.function_config.agent_tool_refusal_rounds = int(
-            load_settings_sync().tool_limit_extension
+            load_settings_sync().tool_limit_refusal_rounds
         )
     except (OSError, ValueError):  # pragma: no cover - unreadable settings file
         pass
@@ -50,13 +53,37 @@ def for_run(config: AmritaConfig | None = None) -> AmritaConfig:
 
 
 class LimitAwareStrategy(ReActAgentStrategy):
-    """``ReActAgentStrategy`` that can ask before ending the turn."""
+    """``ReActAgentStrategy`` that can buy more rounds before ending a turn.
 
-    # Set once this round asked; the guards call ``on_limited`` twice.
-    _asked: bool = False
+    The loop guards call :meth:`on_limited` once the round budget is spent and
+    then read :attr:`budget_exhausted` to decide whether to keep looping. That
+    one flag carries two questions — "may the loop continue?" and "should tools
+    be refused?" — and a grant answers them differently, so they are split
+    here: the guards see True (keep looping) while ``_budget_exhausted`` stays
+    False, so the tool gate keeps executing calls.
+    """
+
+    # ``called_count`` we last asked at; both guards may ask within one round.
+    _asked_at: int = -1
+    # A grant is outstanding, so the guards must keep looping.
+    _granted: bool = False
+
+    @property
+    def budget_exhausted(self) -> bool:
+        """Whether the guards should keep the loop alive.
+
+        Not quite "the budget is spent": after a grant it is not spent, but the
+        loop still has to continue, which is all the guards ask about.
+        """
+        return self._budget_exhausted or self._granted
 
     async def on_limited(self) -> None:
-        if self._asked:
+        if self._budget_exhausted:
+            # Already winding down; the guards call this on every later round.
+            return
+
+        rounds = self._rounds()
+        if self._asked_at == rounds:
             return
 
         settings = await load_settings()
@@ -66,38 +93,52 @@ class LimitAwareStrategy(ReActAgentStrategy):
             await super().on_limited()
             return
 
-        self._asked = True
-        budget = int(self.config.function_config.agent_tool_call_limit)
+        self._asked_at = rounds
+        self._granted = False
+        extension = int(settings.tool_limit_extension)
         action = await LIMITS.ask(
             channel,
-            budget=budget,
+            budget=int(self.config.function_config.agent_tool_call_limit),
+            extension=extension,
             timeout=float(settings.tool_limit_timeout),
         )
         if action == "continue":
-            channel.continue_requested = True
-            logger.info("User asked to continue; a new turn will start after this one")
-            await self.io_stream.yield_response(
-                MessageWithMetadata(
-                    content=(
-                        "用户选择继续迭代。本轮先按已有信息收尾，随后会自动开启新一轮继续处理。"
-                    ),
-                    metadata=MessageMetadataPayloadSystem(
-                        type="system",
-                        message="Continue requested; new turn follows",
-                        extra_type="tool_limit_continue",
-                    ),
-                )
-            )
-            # A new turn follows, so this one still has to end tidily.
-            await super().on_limited()
+            await self._extend(rounds, extension)
             return
-
         if action == "abort":
             await self._abort()
             return
 
         # ``graceful``: AmritaCore's own wind-down.
         await super().on_limited()
+
+    async def _extend(self, rounds: int, extension: int) -> None:
+        """Append ``extension`` rounds to *this* turn.
+
+        The guards re-read ``agent_tool_call_limit`` off the run's config copy
+        right after ``on_limited`` returns, so raising it here is enough to keep
+        the same turn going. ``_refusal_rounds`` is cleared because no wind-down
+        happened; ``_budget_exhausted`` stays False so tools keep executing.
+        """
+        new_limit = rounds + extension
+        self.config.function_config.agent_tool_call_limit = new_limit
+        self._refusal_rounds = 0
+        self._budget_exhausted = False
+        self._granted = True
+        logger.info(f"Tool budget extended by {extension} rounds -> {new_limit}")
+        await self.io_stream.yield_response(
+            MessageWithMetadata(
+                content=(
+                    f"用户选择继续迭代：本轮再追加 {extension} 轮工具调用，"
+                    f"预算上限提高到 {new_limit} 轮。"
+                ),
+                metadata=MessageMetadataPayloadSystem(
+                    type="system",
+                    message="Tool budget extended",
+                    extra_type="tool_limit_continue",
+                ),
+            )
+        )
 
     async def _abort(self) -> None:
         """End the turn here, without a wind-down round.
@@ -118,6 +159,10 @@ class LimitAwareStrategy(ReActAgentStrategy):
         self._store_final_response(
             UniResponse(role="assistant", content=ABORT_NOTICE, tool_calls=None)
         )
+
+    def _rounds(self) -> int:
+        loop = getattr(self.chat_object, "_di_loop", None)
+        return int(getattr(loop, "called_count", 0) or 0)
 
     def _channel(self) -> Any | None:
         session_id = getattr(self.chat_object, "session_id", None)

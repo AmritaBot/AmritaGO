@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 from amrita_core import minimal_init
+from amrita_core.components.compaction import ContextCompactor, split_history
+from amrita_core.config import get_config
 from amrita_core.types import ModelPreset
 from amrita_sense.logging import logger
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -78,7 +80,7 @@ from app.plugins.builtin import install_builtin_plugins
 from app.plugins.config import CONFIGS, PluginConfigError, describe_plugin
 from app.plugins.todos import clear as clear_todos
 from app.plugins.todos import load_sync as load_todos
-from app.runtime.agent_runtime import CONTINUE_PROMPT, run_turn
+from app.runtime.agent_runtime import run_turn
 from app.runtime.attachments import AttachmentError, save_image, save_text
 from app.runtime.audit import BROKER
 from app.runtime.limit_gate import LIMITS
@@ -94,6 +96,7 @@ from app.runtime.sessions import (
     load_context,
     load_history,
     load_usage,
+    save_context,
     save_meta,
 )
 from app.runtime.stream_hub import HUB, StreamChannel
@@ -124,7 +127,10 @@ class SettingsUpdate(BaseModel):
     disabled_plugins: list[str] | None = None
     # ``graceful`` | ``ask`` — what a run does when it spends its tool budget.
     tool_limit_policy: Literal["graceful", "ask"] | None = None
-    tool_limit_extension: int | None = Field(default=None, ge=1, le=50)
+    # Rounds appended to the same turn each time the user asks to continue.
+    tool_limit_extension: int | None = Field(default=None, ge=1, le=100)
+    # Refusal rounds granted to a cut-off run so it can close the turn civilly.
+    tool_limit_refusal_rounds: int | None = Field(default=None, ge=1, le=50)
     tool_limit_timeout: float | None = Field(default=None, ge=10, le=3600)
 
 
@@ -1068,6 +1074,64 @@ async def clear_session_endpoint(session_id: str) -> dict[str, Any]:
     return {"ok": True}
 
 
+@app.post(f"{API}/sessions/{{session_id}}/compact")
+async def compact_session_endpoint(session_id: str) -> dict[str, Any]:
+    """Fold older history into the summary on demand (``/compact``).
+
+    Same :class:`ContextCompactor` the workflow builds, with the same config and
+    preset, so a manual fold and an automatic one leave the same history behind.
+    Between turns only: a live run holds its own context copy, so folding the
+    file underneath it would be undone when that run saves.
+    """
+    if await get_meta(session_id) is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    settings = await load_settings()
+    preset = await resolve_preset(settings.active_model)
+    if preset is None:
+        raise HTTPException(status_code=409, detail="还没有可用的模型，先在设置里选一个")
+    if HUB.busy(session_id):
+        raise HTTPException(status_code=409, detail="这一轮还在跑，等它结束再压缩")
+
+    memory = await load_context(session_id)
+    prefix, tail = split_history(memory.messages)
+    if not prefix:
+        return {
+            "compacted": False,
+            "folded": 0,
+            "kept": len(tail),
+            "summary_chars": len(memory.abstract or ""),
+            "messages": len(memory.messages),
+            "detail": "没有可折叠的历史：至少需要一条更早的消息",
+        }
+
+    compactor = ContextCompactor(config=get_config(), preset=preset)
+    try:
+        folded = await compactor.compact(memory)
+    except Exception as exc:  # a provider error must not look like a broken app
+        raise HTTPException(
+            status_code=502, detail=f"压缩失败：{type(exc).__name__}: {exc}"
+        ) from exc
+    if not folded:
+        return {
+            "compacted": False,
+            "folded": len(prefix),
+            "kept": len(tail),
+            "summary_chars": len(memory.abstract or ""),
+            "messages": len(memory.messages),
+            "detail": "模型没有产出摘要，历史保持原样",
+        }
+
+    await save_context(session_id, memory)
+    return {
+        "compacted": True,
+        "folded": len(prefix),
+        "kept": len(tail),
+        "summary_chars": len(memory.abstract or ""),
+        "messages": len(memory.messages),
+        "detail": "",
+    }
+
+
 class BranchPayload(BaseModel):
     index: int | None = None
     title: str | None = None
@@ -1370,41 +1434,20 @@ async def chat_socket(websocket: WebSocket) -> None:
                 text: str,
                 files: list[dict[str, Any]],
             ) -> None:
-                """Run this turn, then any the user asked to continue into.
+                """Run this turn exactly once.
 
-                "继续迭代" means *a new turn*, not a longer one, so the successor
-                gets a freshly created channel and the normal round budget. It
-                runs inside the same task because the socket's forwarder follows
-                one channel at a time: handing back control first would leave a
-                gap where neither the old nor the new stream is being read.
+                "继续迭代" now appends rounds inside the run, so a finished turn
+                is always finished — there is no successor to chain into.
                 """
-                first: StreamChannel | None = ch
-                prompt = text
-                payload = files
-                # Chain depth, reported for information; deliberately not a cap.
-                chained = 0
-                while True:
-                    active = first or await HUB.create(current)
-                    first = None
-                    if active is not channel:
-                        # Point the socket at the successor before it starts.
-                        spawn_forward(active)
-                    await _run(
-                        active,
-                        current,
-                        prompt,
-                        await load_settings(),
-                        model,
-                        agent,
-                        payload,
-                    )
-                    # One answer per round, so ``aborted`` and ``continue`` never coexist.
-                    if not active.continue_requested or active.cancelled:
-                        return
-                    chained += 1
-                    active.continuations = chained
-                    prompt = CONTINUE_PROMPT
-                    payload = []
+                await _run(
+                    ch,
+                    current,
+                    text,
+                    await load_settings(),
+                    model,
+                    agent,
+                    files,
+                )
 
             channel.task = asyncio.create_task(_drive(channel, message, attachments))
             spawn_forward(channel)
