@@ -33,7 +33,6 @@ jobs:
 
       - name: Install backend dependencies
         run: |
-          cd backend
           uv venv
           uv sync --all-extras
 
@@ -44,13 +43,11 @@ jobs:
 
       - name: Check code format
         run: |
-          cd backend
-          uv run ruff check . --exit-non-zero-on-fix
+          uv run ruff check backend/ --exit-non-zero-on-fix
 
       - name: Run Pyright
         run: |
-          cd backend
-          uv run pyright
+          uv run pyright backend/
 
       - name: Frontend typecheck
         run: |

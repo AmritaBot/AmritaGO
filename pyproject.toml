@@ -5,7 +5,6 @@ members = ["backend"]
 dev = [
     "pyright>=1.1.414",
     "ruff>=0.17.2",
-    "hatching>=0.0.1",
 ]
 
 

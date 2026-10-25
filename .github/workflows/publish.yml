@@ -36,5 +36,4 @@ jobs:
 
       - name: Publish to PyPI
         run: |
-          cd backend
           uv publish --token ${{ secrets.PYPI_API_TOKEN }}
