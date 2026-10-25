@@ -90,7 +90,9 @@ export interface AppSettings {
   enabled_mcp: string[];
   /** Tool name globs removed from every run's tool pool. */
   disabled_tools: string[];
-  /** Plugins skipped during activation (still registered, so still listed). */
+  /** Authoritative plugin allow-list; names absent here are disabled. */
+  enabled_plugins: string[] | null;
+  /** Legacy inverted form, kept for older clients. */
   disabled_plugins: string[];
   debug: boolean;
   /** What a run does when it spends its tool-call budget. */
@@ -343,6 +345,7 @@ export interface PluginSnapshot {
   mcp: { name: string; description: string }[];
   workflows: WorkflowSpec[];
   hooks: string[];
+  enabled_plugins: string[];
   disabled_plugins: string[];
   protected_plugins?: string[];
 }

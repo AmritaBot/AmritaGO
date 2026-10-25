@@ -123,18 +123,20 @@ export function PluginPanel({
   /**
    * Enable/disable one plugin.
    *
-   * The switch writes the disabled list and the backend re-activates, because a
+   * The switch writes the enabled allow-list and the backend re-activates, because a
    * plugin that is not loaded has no tools, hooks or MCP providers at all —
    * filtering after the fact would leave a snapshot describing something that
    * does not exist.
    */
   const togglePlugin = async (name: string, enabled: boolean) => {
     if (!snapshot) return;
-    const current = new Set(snapshot.disabled_plugins ?? []);
-    if (enabled) current.delete(name);
-    else current.add(name);
+    const current = new Set(
+      snapshot.enabled_plugins ?? snapshot.plugins.map((plugin) => plugin.name),
+    );
+    if (enabled) current.add(name);
+    else current.delete(name);
     try {
-      await api.patchSettings({ disabled_plugins: [...current].sort() });
+      await api.patchSettings({ enabled_plugins: [...current].sort() });
       await reload();
       toast.success(enabled ? `已启用 ${name}` : `已停用 ${name}`);
     } catch (error) {

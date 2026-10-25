@@ -72,7 +72,7 @@ from app.core.settings import (
     preset_public,
     save_settings,
 )
-from app.plugins import PLUGINS, PROTECTED_PLUGINS, load_external_plugins
+from app.plugins import PLUGINS, PROTECTED_PLUGINS, load_external_plugins, sync_plugin_states
 from app.plugins.builtin import install_builtin_plugins
 from app.plugins.config import CONFIGS, PluginConfigError, describe_plugin
 from app.plugins.todos import clear as clear_todos
@@ -117,6 +117,9 @@ class SettingsUpdate(BaseModel):
     active_workflow: str | None = None
     debug: bool | None = None
     disabled_tools: list[str] | None = None
+    #: Authoritative allow-list; omitted names are disabled (new plugins too).
+    enabled_plugins: list[str] | None = None
+    #: Legacy inverted form, translated to :attr:`enabled_plugins`.
     disabled_plugins: list[str] | None = None
     #: ``graceful`` | ``ask`` — what a run does when it spends its tool budget.
     tool_limit_policy: Literal["graceful", "ask"] | None = None
@@ -232,9 +235,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     settings = await load_settings()
     PLUGINS.debug = settings.debug
-    PLUGINS.disabled = set(settings.disabled_plugins)
     install_builtin_plugins(PLUGINS)
     load_external_plugins(PLUGINS)
+    # Registration must finish first: the allow-list is derived from it.
+    settings = await sync_plugin_states(settings)
     snapshot = await PLUGINS.activate()
     logger.info(
         f"Plugins loaded: {[info.name for info in snapshot.plugins]} "
@@ -281,23 +285,32 @@ async def patch_settings(update: SettingsUpdate) -> dict[str, Any]:
     settings = await load_settings()
     data = settings.model_dump()
     patch = update.model_dump(exclude_none=True)
-    if "disabled_plugins" in patch:
+    registered = {spec.name for spec in PLUGINS.registered()}
+    if "enabled_plugins" not in patch and "disabled_plugins" in patch:
+        disabled = set(patch["disabled_plugins"])
+        patch["enabled_plugins"] = sorted(name for name in registered if name not in disabled)
+    plugin_change = "enabled_plugins" in patch
+    if plugin_change:
         # Refuse rather than filter: a "disabled" plugin that still runs is worse.
-        blocked = sorted(set(patch["disabled_plugins"]) & PROTECTED_PLUGINS)
+        requested = set(patch["enabled_plugins"])
+        blocked = sorted((PROTECTED_PLUGINS & registered) - requested)
         if blocked:
             raise HTTPException(
                 status_code=400,
                 detail=("这些插件是这个应用的基础能力，不能从界面禁用：" + "、".join(blocked)),
             )
+        patch["disabled_plugins"] = []
+    else:
+        patch.pop("disabled_plugins", None)
     for key, value in patch.items():
         data[key] = value
     saved = await save_settings(AppSettings.model_validate(data))
     if "debug" in patch and saved.debug != PLUGINS.debug:
         PLUGINS.debug = saved.debug
         await PLUGINS.activate()
-    if "disabled_plugins" in patch:
+    if plugin_change:
         # The snapshot must be rebuilt, or the next turn still asks for old tools.
-        PLUGINS.disabled = set(saved.disabled_plugins)
+        PLUGINS.disabled = registered - set(saved.enabled_plugins or [])
         await PLUGINS.activate()
     return saved.model_dump()
 
@@ -720,14 +733,8 @@ async def activate_workflow(payload: WorkflowPayload) -> dict[str, Any]:
     return {"active": payload.name}
 
 
-@app.get(f"{API}/plugins")
-async def get_plugins() -> dict[str, Any]:
-    """Registered plugins with their activation state.
-
-    A disabled plugin still appears here (with ``enabled: false`` and whatever
-    it contributed last time it loaded) — otherwise turning one off would hide
-    the switch that turns it back on.
-    """
+def _plugins_payload() -> dict[str, Any]:
+    """Registered plugins with their activation and persistence state."""
     snapshot = PLUGINS.snapshot
     active = {info.name: info for info in snapshot.plugins}
     items: list[dict[str, Any]] = []
@@ -757,24 +764,40 @@ async def get_plugins() -> dict[str, Any]:
         "directory": str(PATHS.plugins),
         **snapshot.to_public(),
         "plugins": items,
+        "enabled_plugins": sorted(
+            spec.name
+            for spec in PLUGINS.registered()
+            if spec.name not in PLUGINS.disabled or spec.name in PROTECTED_PLUGINS
+        ),
         "disabled_plugins": sorted(PLUGINS.disabled),
         "protected_plugins": sorted(PROTECTED_PLUGINS),
     }
+
+
+@app.get(f"{API}/plugins")
+async def get_plugins() -> dict[str, Any]:
+    """Registered plugins with their activation state.
+
+    A disabled plugin still appears here (with ``enabled: false`` and whatever
+    it contributed last time it loaded) — otherwise turning one off would hide
+    the switch that turns it back on.
+    """
+    return _plugins_payload()
 
 
 @app.post(f"{API}/plugins/reload")
 async def reload_plugins() -> dict[str, Any]:
     """Reload external plugin modules, then re-run activation.
 
-    The disabled set is re-read from settings first: this button is the one
-    place a user expects a file dropped into the plugin directory *and* a
-    previous disable to be respected at once.
+    The allow-list is re-applied after importing: a file dropped into the
+    plugin directory is new, so it stays disabled until the user enables it,
+    while previously disabled plugins remain disabled.
     """
     settings = await load_settings()
-    PLUGINS.disabled = set(settings.disabled_plugins)
     load_external_plugins(PLUGINS)
-    snapshot = await PLUGINS.activate()
-    return {"debug": PLUGINS.debug, "directory": str(PATHS.plugins), **snapshot.to_public()}
+    await sync_plugin_states(settings)
+    await PLUGINS.activate()
+    return _plugins_payload()
 
 
 # Plugin configuration

@@ -406,7 +406,9 @@ class PluginRuntime:
             module=module,
         )
         previous = self._specs.get(resolved)
-        if previous is not None and previous.plugin is not plugin:
+        # A file reload replaces the function object in the same module; only a
+        # different module claiming the name is worth a warning.
+        if previous is not None and previous.module != spec.module:
             logger.warning(
                 f"Plugin '{resolved}' is being replaced by {module or 'an external module'}"
             )
@@ -569,6 +571,63 @@ def debug_enabled() -> bool:
         return False
 
 
+def _bundled(spec: _PluginSpec) -> bool:
+    """Built-ins live in ``app.plugins.*``; external modules are file-loaded."""
+    return spec.module.startswith("app.")
+
+
+async def sync_plugin_states(settings: Any) -> Any:
+    """Make ``settings.enabled_plugins`` authoritative, then persist a change.
+
+    First run (``enabled_plugins is None``) enables the bundled plugins only:
+    anything dropped into ``~/.amrita/plugins`` before the first start is new
+    and therefore stays off until the user turns it on. An existing settings
+    file predates the allow-list and keeps all currently registered plugins
+    enabled, so upgrading does not silently switch anything off. Either way a
+    plugin added later defaults to disabled, because it is simply absent from
+    the persisted allow-list.
+
+    Legacy ``disabled_plugins`` is migrated once and then cleared.
+    """
+    from app.core.settings import save_settings
+
+    specs = list(PLUGINS._specs.values())
+    names = [spec.name for spec in specs]
+    known = set(names)
+    changed = False
+
+    if settings.enabled_plugins is None:
+        if settings.disabled_plugins or PATHS.settings.is_file():
+            # An install from before the allow-list existed: keep whatever was
+            # already registered enabled, minus the legacy disabled set.
+            enabled = [name for name in names if name not in set(settings.disabled_plugins)]
+        else:
+            # Fresh install: bundled plugins are part of the app; anything
+            # already sitting in the user plugin directory is user-added.
+            enabled = [spec.name for spec in specs if _bundled(spec)]
+        settings.enabled_plugins = enabled
+        changed = True
+
+    enabled_set = set(settings.enabled_plugins or [])
+    # A protected plugin cannot be switched off; keep a hand-edited file valid.
+    forced = {name for name in known if name in PROTECTED_PLUGINS}
+    missing = forced - enabled_set
+    if missing:
+        enabled_set |= missing
+        settings.enabled_plugins = sorted(enabled_set)
+        changed = True
+
+    if settings.disabled_plugins:
+        settings.disabled_plugins = []
+        changed = True
+
+    PLUGINS.disabled = {name for name in known if name not in enabled_set}
+
+    if changed:
+        await save_settings(settings)
+    return settings
+
+
 def load_external_plugins(runtime: PluginRuntime, directory: Path | None = None) -> int:
     """Import ``~/.amrita/plugins/*.py`` and register their ``plugin`` hook.
 
@@ -584,17 +643,15 @@ def load_external_plugins(runtime: PluginRuntime, directory: Path | None = None)
             continue
         module_name = f"amrita_go_plugin_{path.stem}"
         try:
-            existing = sys.modules.get(module_name)
-            if existing is not None:
-                importlib.reload(existing)
-                module = existing
-            else:
-                module_spec = importlib.util.spec_from_file_location(module_name, path)
-                if module_spec is None or module_spec.loader is None:
-                    raise ImportError("cannot build an import spec")
-                module = importlib.util.module_from_spec(module_spec)
-                sys.modules[module_name] = module
-                module_spec.loader.exec_module(module)
+            # Always build a fresh module: ``importlib.reload`` cannot find a
+            # spec for file-loaded modules and the reload button must pick up
+            # edits, not keep the old function objects.
+            module_spec = importlib.util.spec_from_file_location(module_name, path)
+            if module_spec is None or module_spec.loader is None:
+                raise ImportError("cannot build an import spec")
+            module = importlib.util.module_from_spec(module_spec)
+            sys.modules[module_name] = module
+            module_spec.loader.exec_module(module)
         except Exception as exc:
             logger.opt(exception=exc).error(f"Failed to import plugin {path}")
             continue
@@ -628,4 +685,5 @@ __all__ = [
     "debug_enabled",
     "load_config",
     "load_external_plugins",
+    "sync_plugin_states",
 ]

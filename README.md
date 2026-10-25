@@ -32,6 +32,8 @@ uv run python -m app
 - [文档目录](docs/README.md)
 - [部署指南](docs/deployment.md)：`uvx`、源码启动和打包
 - [配置指南](docs/configuration.md)：模型、数据目录、密钥和环境变量
+- [Agent 预设指南](docs/agents.md)：内置预设、项目级/用户级预设和示例 Agent
+- [Skill 系统](docs/skills.md)：Skill 目录结构、发现规则、启用与按需加载
 - [插件指南](docs/plugins.md)：安装、编写与安全注意事项
 
 ## 反馈

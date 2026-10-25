@@ -44,6 +44,8 @@ Provider 保存连接信息，一个 Provider 下可配置多个模型。当前�
 
 工作区也可以在应用中切换或登记。文件工具的工作范围取决于界面当前选择的工作区及访问模式。
 
+Skill 发现使用 `AMRITA_GO_WORKSPACE` 对应的工作区 Skill 目录及 `AMRITA_GO_DATA/skills` 用户目录。Skill 发现目录、同名覆盖和按需调用方式见 [Skill 系统指南](skills.md)。注意：当前实现的 Skill 工作区目录由 `AMRITA_GO_WORKSPACE` 确定。
+
 ## 凭据与密钥
 
 Provider API Key 以 Fernet 加密后写入凭据文件，密钥来源按程序策略选择：显式环境变量、已有系统钥匙串密钥或本地 `secret.key`。Linux 桌面环境可使用系统钥匙串；无可用钥匙串时使用文件存储。
@@ -63,9 +65,9 @@ Provider API Key 以 Fernet 加密后写入凭据文件，密钥来源按程序�
 
 ## 插件和 MCP 设置
 
-- 在「设置 → 插件」启用或禁用可切换插件，并编辑插件自行声明的配置。
+- 在「设置 → 插件」启用或禁用可切换插件，并编辑插件自行声明的配置。启停状态持久化在 `settings.json` 的 `enabled_plugins`；新插件默认不启用，不在列表中的插件不会被激活。
 - MCP 服务定义保存在数据目录的 `mcp.json`，连接状态和工具列表可在设置界面查看。
 - `core-tools`、`files`、`todos` 等核心插件是固定启用的。
 - 只读访问模式不提供 shell 工具；`workspace` 和 `full` 的具体边界请在使用前确认。Alpha 阶段不要把访问模式当作安全沙箱。
 
-插件配置详情见[插件指南](plugins.md)。
+Agent 预设详情见 [Agent 预设指南](agents.md)，插件配置详情见[插件指南](plugins.md)。

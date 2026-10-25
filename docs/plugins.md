@@ -11,7 +11,9 @@
 ~/.amrita/plugins/hello.py
 ```
 
-Windows 路径通常是 `%USERPROFILE%\.amrita\plugins\hello.py`。程序启动时会加载目录中非下划线开头的 `*.py` 文件。插件模块需要导出 `plugin(ctx)` 或兼容入口 `setup(ctx)`；可选用 `NAME` 和 `DESCRIPTION` 指定插件名称与说明。新增、删除或修改插件后重启 AmritaGO。
+Windows 路径通常是 `%USERPROFILE%\.amrita\plugins\hello.py`。程序启动时会加载目录中非下划线开头的 `*.py` 文件。插件模块需要导出 `plugin(ctx)` 或兼容入口 `setup(ctx)`；可选用 `NAME` 和 `DESCRIPTION` 指定插件名称与说明。新增、删除或修改插件后重启 AmritaGO，或在「设置 → 插件」里点「重载」。
+
+**新插件默认不启用。** 启用状态保存在 `settings.json` 的 `enabled_plugins` 允许列表中；不在列表里的插件仍会出现在设置界面，但不会激活，也不会提供工具、工作流或钩子。全新安装时只有随应用发布的内置插件默认启用；从旧版本升级且已有 `settings.json` 时，现有插件保持原来的启用状态。此后新增的插件（包括新放入目录的外部插件）都需要手动打开。`core-tools`、`files`、`todos` 是固定启用的保护插件，不能关闭。
 
 ```python
 NAME = "hello"

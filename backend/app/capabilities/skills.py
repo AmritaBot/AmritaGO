@@ -1,22 +1,13 @@
-"""Skill (Anthropic Agent Skills style) discovery and tool-pool injection.
+"""Skill discovery and tool-pool injection, backed by ``faskill``.
 
-A skill is a directory under ``data/skills/<dir>/`` containing ``SKILL.md``::
+``faskill`` owns the SKILL.md format: front-matter parsing, ``$ARGUMENTS``
+substitution, script metadata, caching and validation all live there. This
+module only adapts its ``SkillContext`` to AmritaGO:
 
-    ---
-    name: pdf-report
-    description: Build a PDF report from conversation notes.
-    version: 1.0.0
-    ---
-    # Instructions
-    Turn the user's request into a report. $ARGUMENTS
-
-Progressive disclosure mirrors the AmritaBot implementation:
-
-1. Only skill *metadata* is advertised in the tool pool (one tool per skill).
-2. Invoking the tool returns the ``SKILL.md`` body, so whole instructions are
-   paid for only when the skill is actually used.
-3. The tool result also lists sibling reference files, so the model can ask for
-   them by name instead of receiving the whole directory up front.
+1. discover skills from the workspace (higher priority) and user directories;
+2. expose one tool per enabled skill, named exactly like the skill;
+3. emit ``skill_call`` stream metadata so the UI can show the invocation;
+4. build the ``## Available faskill skills`` section of the system prompt.
 
 Skills are registered into a **clone** of the global ``ToolsManager`` so that
 per-session filtering never mutates the process-wide tool registry.
@@ -25,8 +16,10 @@ per-session filtering never mutates the process-wide tool registry.
 from __future__ import annotations
 
 import asyncio
+import threading
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from amrita_core.contents import MessageMetadataPayload, MessageWithMetadata
 from amrita_core.tools.manager import MultiToolsManager, ToolsManager
@@ -38,11 +31,16 @@ from amrita_core.tools.models import (
     ToolData,
     ToolFunctionSchema,
 )
+from faskill import SkillContext, SkillMetadata, create_context
 
 from app.core.config import PATHS
 
 _ARGUMENTS_PARAM = "arguments"
-_SKILL_FILE = "SKILL.md"
+
+#: Guards lazy discovery: the web server calls the sync API from worker threads.
+_context_lock = threading.Lock()
+_context: SkillContext | None = None
+_context_signature: tuple[Any, ...] | None = None
 
 
 class SkillCallMetadata(MessageMetadataPayload):
@@ -58,79 +56,82 @@ class SkillInfo:
     version: str | None
     path: Path
     scope: str = "user"
+    allowed_tools: tuple[str, ...] | None = None
 
     @property
     def directory(self) -> Path:
         return self.path.parent
 
 
-def _parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
-    """Minimal YAML front-matter reader (flat ``key: value`` pairs only)."""
-    if not text.startswith("---"):
-        return {}, text
-    lines = text.splitlines()
-    meta: dict[str, str] = {}
-    end = None
-    for idx in range(1, len(lines)):
-        line = lines[idx]
-        if line.strip() in {"---", "..."}:
-            end = idx
-            break
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        key, sep, value = line.partition(":")
-        if not sep:
-            continue
-        value = value.strip().strip('"').strip("'")
-        meta[key.strip()] = value
-    if end is None:
-        return {}, text
-    return meta, "\n".join(lines[end + 1 :]).lstrip("\n")
+def _skill_dirs() -> list[Path]:
+    """Workspace first: faskill keeps the first source for a duplicate name."""
+    PATHS.ensure()
+    return [PATHS.workspace_skills, PATHS.user_skills]
 
 
-def _read_skill(directory: Path, scope: str = "user") -> SkillInfo | None:
-    skill_file = directory / _SKILL_FILE
-    if not skill_file.is_file():
-        return None
+def _signature(directories: list[Path]) -> tuple[Any, ...]:
+    """Cheap change detector so a new or edited SKILL.md is picked up."""
+    entries: list[tuple[str, int]] = []
+    for root in directories:
+        for skill_file in sorted(root.glob("*/SKILL.md")):
+            try:
+                entries.append((str(skill_file), skill_file.stat().st_mtime_ns))
+            except OSError:
+                entries.append((str(skill_file), 0))
+    return tuple(entries)
+
+
+def _build_context(directories: list[Path]) -> SkillContext:
+    context = create_context(skill_dirs=[str(directory) for directory in directories])
+    context.discover()
+    return context
+
+
+def _context_for_discovery() -> tuple[SkillContext, list[Path]]:
+    global _context, _context_signature
+    directories = _skill_dirs()
+    signature = _signature(directories)
+    with _context_lock:
+        if _context is None or _context_signature != signature:
+            try:
+                _context = _build_context(directories)
+            except Exception:
+                # An unreadable directory must not take the whole app down.
+                _context = create_context(skill_dirs=[])
+                _context.discover()
+            _context_signature = signature
+        return _context, directories
+
+
+def _scope_of(path: Path, directories: list[Path]) -> str:
     try:
-        text = skill_file.read_text(encoding="utf-8")
+        resolved = path.resolve()
     except OSError:
-        return None
-    meta, _ = _parse_frontmatter(text)
-    name = meta.get("name") or directory.name
-    description = meta.get("description") or "No description provided."
+        return "user"
+    for directory, scope in zip(directories, ("workspace", "user"), strict=False):
+        try:
+            if resolved.is_relative_to(directory.resolve()):
+                return scope
+        except OSError:
+            continue
+    return "user"
+
+
+def _to_info(meta: SkillMetadata, directories: list[Path]) -> SkillInfo:
     return SkillInfo(
-        name=name.strip(),
-        description=description.strip(),
-        version=meta.get("version"),
-        path=skill_file,
-        scope=scope,
+        name=meta.name,
+        description=meta.description,
+        version=meta.version,
+        path=meta.skill_path,
+        scope=_scope_of(meta.skill_path, directories),
+        allowed_tools=meta.allowed_tools,
     )
 
 
 def discover_skills_sync() -> list[SkillInfo]:
-    """Collect skills from the workspace, then the user directory.
-
-    Discovery order is precedence order: a workspace skill with the same name
-    as a user skill wins, which lets a project pin its own version of a shared
-    skill without touching the global copy.
-    """
-    PATHS.ensure()
-    found: list[SkillInfo] = []
-    seen: set[str] = set()
-    for directory, scope in (
-        (PATHS.workspace_skills, "workspace"),
-        (PATHS.user_skills, "user"),
-    ):
-        for child in sorted(directory.iterdir()):
-            if not child.is_dir():
-                continue
-            info = _read_skill(child, scope)
-            if info is None or info.name in seen:
-                continue
-            seen.add(info.name)
-            found.append(info)
-    return found
+    """Collect skills from the workspace, then the user directory."""
+    context, directories = _context_for_discovery()
+    return [_to_info(meta, directories) for meta in context.list_skills(include_qualified=False)]
 
 
 async def discover_skills() -> list[SkillInfo]:
@@ -144,28 +145,12 @@ def skill_enabled(name: str, enabled: list[str] | None) -> bool:
     return name in enabled
 
 
-def _read_body(info: SkillInfo) -> str:
-    text = info.path.read_text(encoding="utf-8")
-    _, body = _parse_frontmatter(text)
-    return body
-
-
-def _reference_files(info: SkillInfo) -> list[str]:
-    """List sibling files (excluding SKILL.md) for progressive disclosure."""
-    out: list[str] = []
-    for path in sorted(info.directory.rglob("*")):
-        if not path.is_file() or path.name == _SKILL_FILE:
-            continue
-        out.append(path.relative_to(info.directory).as_posix())
-    return out
-
-
 def _build_skill_schema(info: SkillInfo) -> ToolFunctionSchema:
     return ToolFunctionSchema(
         type="function",
         strict=True,
         function=FunctionDefinitionSchema(
-            name=f"skill_{_sanitize(info.name)}",
+            name=info.name,
             description=info.description,
             parameters=FunctionParametersSchema(
                 type="object",
@@ -182,10 +167,6 @@ def _build_skill_schema(info: SkillInfo) -> ToolFunctionSchema:
             ),
         ),
     )
-
-
-def _sanitize(name: str) -> str:
-    return "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in name)
 
 
 def _make_handler(info: SkillInfo):
@@ -208,16 +189,9 @@ def _make_handler(info: SkillInfo):
             except Exception:
                 pass
 
-        body = await asyncio.to_thread(_read_body, info)
-        body = body.replace("$ARGUMENTS", str(arguments))
-        refs = await asyncio.to_thread(_reference_files, info)
-        parts = [body.strip()]
-        if refs:
-            parts.append(
-                "\n\n<skill_files>\n" + "\n".join(f"- {ref}" for ref in refs) + "\n</skill_files>\n"
-                "Ask for a specific file if you need its contents."
-            )
-        return "\n".join(part for part in parts if part)
+        context, _ = _context_for_discovery()
+        # faskill's invocation is synchronous (disk read + template processing).
+        return await asyncio.to_thread(context.invoke_skill, info.name, str(arguments))
 
     return invoke
 
@@ -245,10 +219,9 @@ def skill_tool_data(
     for info in skills if skills is not None else discover_skills_sync():
         if not skill_enabled(info.name, enabled):
             continue
-        tool_name = f"skill_{_sanitize(info.name)}"
-        if tool_name in names:
+        if info.name in names:
             continue
-        names.add(tool_name)
+        names.add(info.name)
         out.append(
             ToolData(
                 data=_build_skill_schema(info),
@@ -287,13 +260,13 @@ def build_skill_usage_prompt(
     if not available:
         return ""
     lines = [
-        "## Available skills",
+        "## Available faskill skills",
         "Call a skill tool when the user's task matches its purpose:",
     ]
     lines.extend(f"- {info.name}: {info.description}" for info in available)
     lines.append(
-        'Pass the user\'s request as the "arguments" string; it replaces '
-        "$ARGUMENTS in the skill template. The tool returns the skill "
-        "instructions plus the list of files you may ask for."
+        'Pass the user\'s request as the "arguments" string; it is inserted '
+        "into the skill template via $ARGUMENTS (or appended when the template "
+        "has no placeholder). The tool returns the processed skill content."
     )
     return "\n".join(lines)

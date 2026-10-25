@@ -32,7 +32,10 @@ class AppSettings(BaseModel):
     enabled_mcp: list[str] = Field(default_factory=list)
     #: Tool name globs removed from every run's pool; a filter on the per-run copy.
     disabled_tools: list[str] = Field(default_factory=list)
-    #: Plugins not loaded at all; they stay registered so the UI can re-enable them.
+    #: Authoritative plugin enable list. ``None`` means "not initialized yet":
+    #: bundled plugins start enabled, later arrivals start disabled.
+    enabled_plugins: list[str] | None = None
+    #: Legacy inverted form, migrated into :attr:`enabled_plugins` at startup.
     disabled_plugins: list[str] = Field(default_factory=list)
     #: Developer mode: reload plugins to prove they are side-effect free.
     debug: bool = False

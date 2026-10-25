@@ -1,10 +1,10 @@
-"""Verify skill discovery + tool-pool injection.
+"""Verify faskill skill discovery + tool-pool injection.
 
-Creates a temporary skill, then asserts:
-  * ``/api/skills`` lists it,
-  * the agent's tool pool contains ``skill_<name>`` (checked through the
-    backend's own tool builder, not by calling the model),
-  * the tool result embeds the SKILL.md body with ``$ARGUMENTS`` substituted.
+Creates a temporary skill in the workspace skills directory, then asserts:
+  * discovery lists it,
+  * the tool pool contains a tool named after the skill,
+  * faskill's ``$ARGUMENTS`` substitution reaches the tool result,
+  * disabling removes the tool.
 
     .venv/Scripts/python.exe scripts/check_skills.py
 """
@@ -12,8 +12,10 @@ Creates a temporary skill, then asserts:
 from __future__ import annotations
 
 import asyncio
+import shutil
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -34,8 +36,6 @@ version: 0.1.0
 # Demo
 
 Handle this request: $ARGUMENTS
-
-Then check `template.md`.
 """
 
 
@@ -44,38 +44,44 @@ async def main() -> int:
 
     await minimal_init()
 
-    directory = PATHS.skills / "demo-skill"
+    directory = PATHS.workspace_skills / "demo-skill"
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "SKILL.md").write_text(SKILL, encoding="utf-8")
-    (directory / "template.md").write_text("# Template\n", encoding="utf-8")
 
-    skills = await discover_skills()
-    names = [info.name for info in skills]
-    print("discovered:", names)
-    assert "demo-skill" in names, names
+    try:
+        skills = await discover_skills()
+        names = [info.name for info in skills]
+        print("discovered:", names)
+        assert "demo-skill" in names, names
 
-    tools = build_skill_tools(enabled=None, skills=skills)
-    metas = tools.tools_meta()
-    print("tool count:", len(metas))
-    assert "skill_demo-skill" in metas, list(metas)[:10]
+        tools = build_skill_tools(enabled=None, skills=skills)
+        metas = tools.tools_meta()
+        print("tool count:", len(metas))
+        assert "demo-skill" in metas, list(metas)[:10]
 
-    prompt = build_skill_usage_prompt(None, skills)
-    assert "demo-skill" in prompt
-    print("usage prompt: ok")
+        # faskill owns $ARGUMENTS substitution; the handler must expose it.
+        tool = tools._models["demo-skill"]
+        result = await tool.func(  # type: ignore[call-arg]
+            SimpleNamespace(data={"arguments": "REQUEST"}, ctx=SimpleNamespace(io_stream=None))
+        )
+        assert "REQUEST" in result, result
 
-    # Disabling removes the tool.
-    disabled = build_skill_tools(enabled=[], skills=skills)
-    assert "skill_demo-skill" not in disabled.tools_meta()
-    print("disable filtering: ok")
+        prompt = build_skill_usage_prompt(None, skills)
+        assert "demo-skill" in prompt
+        print("usage prompt: ok")
 
-    settings = AppSettings(enabled_skills=None)
-    assert settings.enabled_skills is None
-    print("settings default: ok")
+        # Disabling removes the tool.
+        disabled = build_skill_tools(enabled=[], skills=skills)
+        assert "demo-skill" not in disabled.tools_meta()
+        print("disable filtering: ok")
 
-    # Clean up so the repo stays tidy.
-    (directory / "SKILL.md").unlink()
-    (directory / "template.md").unlink()
-    directory.rmdir()
+        settings = AppSettings(enabled_skills=None)
+        assert settings.enabled_skills is None
+        print("settings default: ok")
+    finally:
+        # Clean up so the repo stays tidy.
+        shutil.rmtree(directory, ignore_errors=True)
+
     print("SKILLS OK")
     return 0
 
