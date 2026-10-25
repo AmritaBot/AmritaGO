@@ -22,7 +22,9 @@ class Workspace(BaseModel):
     added_at: float
 
 
-_EXCLUDED = {"/", str(Path.home())}
+def _forbidden(path: Path) -> bool:
+    """A filesystem root or the user's home: too broad to hand an agent."""
+    return path.parent == path or path == Path.home()
 
 
 def resolve_workspace(raw: str | None) -> Path:
@@ -46,15 +48,15 @@ def _load_sync() -> list[Workspace]:
     import json
 
     data = PATHS.workspaces_file
-    if not data.exists():
-        return [_entry(PROJECT_ROOT)]
-    raw = json.loads(data.read_text(encoding="utf-8") or "[]")
+    raw = json.loads(data.read_text(encoding="utf-8") or "[]") if data.exists() else []
     out: list[Workspace] = []
     for item in raw:
         try:
-            out.append(Workspace.model_validate(item))
+            entry = Workspace.model_validate(item)
         except ValueError:
             continue
+        if not _forbidden(Path(entry.path)):
+            out.append(entry)
     if not any(w.path == str(PROJECT_ROOT) for w in out):
         out.insert(0, _entry(PROJECT_ROOT))
     return out
@@ -83,7 +85,7 @@ async def add_workspace(raw: str) -> dict:
         raise ValueError(f"目录不存在：{candidate}") from exc
     if not resolved.is_dir():
         raise ValueError("路径不是目录")
-    if str(resolved) in _EXCLUDED:
+    if _forbidden(resolved):
         raise ValueError("不能把根目录或用户主目录作为工作区")
 
     def _work() -> dict:

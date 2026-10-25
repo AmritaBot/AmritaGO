@@ -11,9 +11,24 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Repository root (…/AmritaAgent), three levels above this file
-# (``core`` -> ``app`` -> ``backend`` -> repo).
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+def _probe_project_root(start: Path) -> Path:
+    """The nearest ancestor that looks like this checkout, else the cwd.
+
+    Counting parent directories only holds for a source tree; an installed
+    wheel sits in ``site-packages``, where no checkout exists above it and the
+    process cwd is the only sensible default workspace.
+    """
+    for candidate in (start, *start.parents):
+        if (candidate / "backend" / "pyproject.toml").is_file() and (
+            candidate / "frontend" / "build.ts"
+        ).is_file():
+            return candidate
+    return Path.cwd()
+
+
+# Repository root of a source checkout; the process cwd when installed.
+PROJECT_ROOT = _probe_project_root(Path(__file__).resolve().parent)
 
 # Package directory (``…/app``); bundled assets sit next to the code.
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]

@@ -12,7 +12,6 @@ import base64
 import os
 import stat
 import subprocess
-import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -152,6 +151,11 @@ def _create_key_file(path: Path) -> bytes:
 # OS keyring store
 
 
+def _is_linux() -> bool:
+    """Linux, decided by the filesystem: only Linux mounts ``/proc/self``."""
+    return Path("/proc/self").is_dir()
+
+
 def _has_desktop_session() -> bool:
     """Whether a Linux session has a secret service to talk to.
 
@@ -178,7 +182,7 @@ def _keyring_unusable_reason() -> str | None:
     if os.name == "nt":
         # Windows keeps the key in an ACL-protected file.
         return "Windows uses the ACL-protected key file"
-    if sys.platform.startswith("linux") and not _has_desktop_session():
+    if _is_linux() and not _has_desktop_session():
         return "no desktop session (headless)"
     try:
         import keyring

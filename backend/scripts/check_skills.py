@@ -16,7 +16,9 @@ import shutil
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
+# Run the file directly from ``backend/``: make the package importable there.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.capabilities.skills import (
@@ -61,10 +63,11 @@ async def main() -> int:
 
         # faskill owns $ARGUMENTS substitution; the handler must expose it.
         tool = tools._models["demo-skill"]
-        result = await tool.func(  # type: ignore[call-arg]
-            SimpleNamespace(data={"arguments": "REQUEST"}, ctx=SimpleNamespace(io_stream=None))
+        fake_ctx = cast(
+            Any, SimpleNamespace(data={"arguments": "REQUEST"}, ctx=SimpleNamespace(io_stream=None))
         )
-        assert "REQUEST" in result, result
+        result = await tool.func(fake_ctx)  # type: ignore[call-arg]
+        assert result is not None and "REQUEST" in result, result
 
         prompt = build_skill_usage_prompt(None, skills)
         assert "demo-skill" in prompt
@@ -87,4 +90,4 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(asyncio.run(main()))
+    raise SystemExit(asyncio.run(main()))

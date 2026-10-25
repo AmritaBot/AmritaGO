@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import sys
 
 import httpx
 import websockets
@@ -67,4 +66,4 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(asyncio.run(main()))
+    raise SystemExit(asyncio.run(main()))

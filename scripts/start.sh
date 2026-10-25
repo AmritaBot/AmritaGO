@@ -19,4 +19,6 @@ if [[ "${1:-}" != "--dev" && ! -f "$root/frontend/dist/index.html" ]]; then
 fi
 
 cd "$backend"
-exec ./.venv/Scripts/python.exe -m app 2>/dev/null || exec ./.venv/bin/python -m app
+python="$backend/.venv/bin/python"
+[[ -x "$python" ]] || python="$backend/.venv/Scripts/python.exe"
+exec "$python" -m app
