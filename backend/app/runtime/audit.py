@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
+from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -96,6 +97,15 @@ class AuditBroker:
                     timed_out=True,
                     request_id=request_id,
                 )
+            except asyncio.CancelledError:
+                # The call was cancelled (or the turn stopped) while the user was
+                # still deciding. Close the dialog: an answer to a question whose
+                # caller is gone would only produce "已过期".
+                with suppress(asyncio.CancelledError):
+                    await channel.publish(
+                        {"type": "confirm_closed", "request_id": request_id}
+                    )
+                raise
             decision.request_id = request_id
             return decision
         finally:

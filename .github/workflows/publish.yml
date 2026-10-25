@@ -30,12 +30,9 @@ jobs:
           bun install --frozen-lockfile
 
       # The wheel embeds frontend/dist as app/_frontend (see backend/hatch_build.py).
+      # The script also stages LICENSE for hatchling and verifies the artifacts.
       - name: Build frontend and package
-        run: |
-          cd frontend
-          bun run build
-          cd ../backend
-          uv build
+        run: bash scripts/package.sh
 
       - name: Publish to PyPI
         run: |

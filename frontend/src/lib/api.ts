@@ -103,6 +103,8 @@ export interface AppSettings {
   tool_limit_refusal_rounds: number;
   /** Seconds the parked run waits for an answer before winding down. */
   tool_limit_timeout: number;
+  /** Wall-clock limit for one tool call, in seconds; `0` disables it. */
+  tool_timeout: number;
   updated_at: number;
 }
 
@@ -431,6 +433,23 @@ export interface ToolLimitRequest {
   timeout: number;
 }
 
+/**
+ * A tool call the server is executing right now.
+ *
+ * The window between this event and `tool_finished` is exactly when 取消 means
+ * something, so the UI must stop offering it afterwards.
+ */
+export interface RunningTool {
+  tool_id: string;
+  tool: string;
+  /** Seconds until the server gives up on this call; `0` means no limit. */
+  timeout: number;
+  started_at: number;
+}
+
+/** How a call ended, as reported by the server. */
+export type ToolOutcome = "done" | "failed" | "cancelled" | "timeout" | "aborted";
+
 export interface Workspace {
   name: string;
   path: string;
@@ -517,7 +536,10 @@ export type StreamEvent =
   | { type: "reasoning"; text: string }
   | { type: "meta"; content: string; metadata: Record<string, unknown> }
   | ({ type: "confirm" } & ConfirmRequest)
+  | { type: "confirm_closed"; request_id: string }
   | ({ type: "limit" } & ToolLimitRequest)
+  | ({ type: "tool_running" } & RunningTool)
+  | { type: "tool_finished"; tool_id: string; outcome: ToolOutcome }
   | { type: "todos"; todos: TodoList }
   | {
       type: "usage";

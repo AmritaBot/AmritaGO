@@ -10,21 +10,32 @@ A *round* here is one user message; the budget counts **LLM requests** inside it
 i.e. one per tool-calling turn the model takes. The budget belongs to the run's
 config copy, so a grant is just a larger ``agent_tool_call_limit``: no new turn,
 no new channel, no framework-level cap.
+
+The same strategy also owns *single* tool execution (:meth:`call_tool`), because
+that is the only place both the cancel button and the global timeout can be
+enforced without touching AmritaCore: a call is announced, raced against the
+user's cancel, and bounded by ``tool_timeout``.
 """
 
 from __future__ import annotations
 
-from typing import Any
+import asyncio
+from contextlib import suppress
+from typing import Any, cast
 
 from amrita_core.builtins.agent import ReActAgentStrategy
 from amrita_core.config import AmritaConfig, get_config
 from amrita_core.contents import MessageMetadataPayloadSystem, MessageWithMetadata
-from amrita_core.types import UniResponse
+from amrita_core.types import ToolCall, UniResponse
 from amrita_sense.logging import logger
 
 from app.core.settings import load_settings
 from app.runtime.limit_gate import LIMITS
 from app.runtime.stream_hub import HUB
+from app.runtime.tool_gate import CANCELLED_PREFIX, TIMEOUT_PREFIX, TOOLS
+
+# Fallback when ``settings.json`` cannot be read; matches the field default.
+DEFAULT_TOOL_TIMEOUT = 600.0
 
 # What the transcript says when the user cuts a spent run off.
 ABORT_NOTICE = (
@@ -53,6 +64,16 @@ def for_run(config: AmritaConfig | None = None) -> AmritaConfig:
     except (OSError, ValueError):  # pragma: no cover - unreadable settings file
         pass
     return copy
+
+
+async def _abandon(task: asyncio.Task[Any]) -> None:
+    """Stop a call whose result is no longer wanted, and wait for it to unwind.
+
+    ``asyncio.wait`` rather than ``await task``: the task's own cancellation is
+    an outcome to wait for, not a cancellation of *this* coroutine.
+    """
+    task.cancel()
+    await asyncio.wait({task})
 
 
 class LimitAwareStrategy(ReActAgentStrategy):
@@ -115,6 +136,113 @@ class LimitAwareStrategy(ReActAgentStrategy):
         # ``graceful``: AmritaCore's own wind-down.
         await super().on_limited()
 
+    async def call_tool(self, tool_call: ToolCall) -> str:
+        """Execute one tool call, bounded in time and cancelable by the user.
+
+        The call is announced on the stream first, so the UI offers 取消 for
+        exactly the window in which cancelling means something. Both endings are
+        returned as ordinary results: the model is told what happened, keeps its
+        context and can try something else — that is the difference between
+        cancelling a call and killing the turn.
+
+        The timeout is a backstop for tools that ignore their own limits (an MCP
+        server that never answers, say). A tool that enforces a shorter limit of
+        its own still wins, because it returns before this one fires.
+        """
+        timeout = await self._tool_timeout()
+        gate = TOOLS.open(tool_call.id, tool_call.function.name, asyncio.get_running_loop())
+        await self._publish(
+            {
+                "type": "tool_running",
+                "tool_id": tool_call.id,
+                "tool": tool_call.function.name,
+                "timeout": timeout,
+                "started_at": gate.started_at,
+            }
+        )
+        task = asyncio.create_task(super().call_tool(tool_call))
+        # ``aborted`` means the turn itself was stopped; the UI never sees it,
+        # but it keeps the published outcome honest.
+        outcome = "aborted"
+        try:
+            done, _ = await asyncio.wait(
+                {task, gate.future},
+                timeout=timeout if timeout > 0 else None,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if task in done:
+                # ``result()`` re-raises the tool's own failure, which the
+                # framework turns into an ``ERR:`` tool result.
+                failed = task.cancelled() or task.exception() is not None
+                outcome = "failed" if failed else "done"
+                return task.result()
+            if gate.future in done:
+                outcome = "cancelled"
+                await _abandon(task)
+                return await self._tool_cancelled(tool_call, gate.future.result())
+            outcome = "timeout"
+            await _abandon(task)
+            return await self._tool_timed_out(tool_call, timeout)
+        finally:
+            TOOLS.close(tool_call.id)
+            if not task.done():
+                task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._publish(
+                    {"type": "tool_finished", "tool_id": tool_call.id, "outcome": outcome}
+                )
+
+    async def _tool_timeout(self) -> float:
+        """The global wall-clock limit for one call; ``0`` means no limit."""
+        try:
+            return float((await load_settings()).tool_timeout)
+        except (OSError, ValueError):  # pragma: no cover - unreadable settings file
+            return DEFAULT_TOOL_TIMEOUT
+
+    async def _tool_cancelled(self, tool_call: ToolCall, reason: str) -> str:
+        notice = (
+            f"{CANCELLED_PREFIX}（原因：{reason}）。"
+            "它没有产生结果；请基于已有信息继续，或换一种做法。"
+        )
+        await self._tool_notice(tool_call, notice, "tool_cancelled")
+        return notice
+
+    async def _tool_timed_out(self, tool_call: ToolCall, timeout: float) -> str:
+        notice = (
+            f"{TIMEOUT_PREFIX} {timeout:g} 秒仍未返回，已被终止。"
+            "请换一种更快的做法，或基于已有信息继续。"
+        )
+        await self._tool_notice(tool_call, notice, "tool_timeout")
+        return notice
+
+    async def _tool_notice(self, tool_call: ToolCall, content: str, extra_type: str) -> None:
+        """Record the ending in the transcript, not only on the live stream.
+
+        ``tool_running`` / ``tool_finished`` are transient — they exist so the
+        cancel button can appear and disappear. *Why* a call ended is worth
+        keeping, so it is emitted as a normal meta event that history stores.
+        """
+        metadata = cast(
+            MessageMetadataPayloadSystem,
+            {
+                "type": "system",
+                "message": content,
+                "extra_type": extra_type,
+                "tool_id": tool_call.id,
+                "function_name": tool_call.function.name,
+            },
+        )
+        await self.io_stream.yield_response(
+            MessageWithMetadata(content=content, metadata=metadata)
+        )
+
+    async def _publish(self, event: dict[str, Any]) -> None:
+        """Send a transient event: the UI needs it, the transcript does not."""
+        channel = self._channel()
+        if channel is None or channel.done:
+            return
+        await channel.publish(event)
+
     async def _extend(self, requests: int, extension: int) -> None:
         """Append ``extension`` LLM requests to *this* turn.
 
@@ -172,4 +300,4 @@ class LimitAwareStrategy(ReActAgentStrategy):
         return HUB.latest(session_id) if session_id else None
 
 
-__all__ = ["ABORT_NOTICE", "LimitAwareStrategy", "for_run"]
+__all__ = ["ABORT_NOTICE", "DEFAULT_TOOL_TIMEOUT", "LimitAwareStrategy", "for_run"]

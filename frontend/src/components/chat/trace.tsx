@@ -13,19 +13,23 @@
 
 import { useState } from "react";
 import {
+  BanIcon,
   BrainIcon,
   CheckIcon,
   ChevronDownIcon,
   CircleAlertIcon,
+  CircleSlashIcon,
   CopyIcon,
   HelpCircleIcon,
   InfoIcon,
   Loader2Icon,
+  TimerIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import type { ChatMessage } from "@/hooks/use-chat-socket";
+import type { RunningTool } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 
@@ -37,9 +41,10 @@ interface ToolCall {
   name: string;
   /**
    * ``unknown`` is not ``failed``: the run ended without a completion event, so
-   * calling that a failure would invent an outcome.
+   * calling that a failure would invent an outcome. ``cancelled`` and
+   * ``timeout`` are the two ways a call can end without a result of its own.
    */
-  status: "running" | "done" | "failed" | "unknown";
+  status: "running" | "done" | "failed" | "unknown" | "cancelled" | "timeout";
   args: string | null;
   result: string | null;
   error: string | null;
@@ -88,14 +93,32 @@ function foldCall(call: ToolCall, event: MetaEvent): ToolCall {
   const done = event.metadata.is_done === true;
   const error = event.metadata.err == null ? null : String(event.metadata.err);
   const result = typeof event.metadata.result === "string" ? event.metadata.result : null;
+  // A cancelled or timed-out call still receives the framework's ordinary
+  // completion event (it returns a result string), which must not relabel it
+  // "完成": the user needs to see that it was cut short.
+  const settled = call.status === "cancelled" || call.status === "timeout";
   return {
     ...call,
     finished: call.finished || done,
     error: call.error ?? error,
     result: result ?? call.result,
     args: call.args ?? describeArgs(event),
-    status: call.finished || done ? (call.error ?? error ? "failed" : "done") : "running",
+    status: settled
+      ? call.status
+      : call.finished || done
+        ? call.error ?? error
+          ? "failed"
+          : "done"
+        : "running",
   };
+}
+
+/** Notices that say a call was cut short, and which call they belong to. */
+function interruptedStatus(metadata: Record<string, unknown>): ToolCall["status"] | null {
+  const extra = String(metadata.extra_type ?? "");
+  if (extra === "tool_cancelled") return "cancelled";
+  if (extra === "tool_timeout") return "timeout";
+  return null;
 }
 
 export function buildTrace(trace: Entry[], streaming: boolean): Item[] {
@@ -109,6 +132,18 @@ export function buildTrace(trace: Entry[], streaming: boolean): Item[] {
     }
     const name = toolNameOf(entry);
     if (name === null) {
+      // A cancel/timeout notice names the call it belongs to, so the tool row
+      // stops spinning and says what happened instead of "未返回".
+      const interrupted = interruptedStatus(entry.metadata);
+      if (interrupted) {
+        const target = String(entry.metadata.tool_id ?? "");
+        const at = target ? positions.get(target) : undefined;
+        const item = at === undefined ? undefined : items[at];
+        if (item?.kind === "tool") {
+          item.call.status = interrupted;
+          item.call.finished = true;
+        }
+      }
       items.push({
         kind: "notice",
         key: `n-${index}`,
@@ -165,6 +200,12 @@ function StatusIcon({ status }: { status: ToolCall["status"] }) {
   }
   if (status === "failed") {
     return <CircleAlertIcon className="size-3.5 text-destructive" />;
+  }
+  if (status === "cancelled") {
+    return <CircleSlashIcon className="size-3.5 text-amber-600 dark:text-amber-400" />;
+  }
+  if (status === "timeout") {
+    return <TimerIcon className="size-3.5 text-amber-600 dark:text-amber-400" />;
   }
   if (status === "unknown") {
     return <HelpCircleIcon className="size-3.5 text-muted-foreground" />;
@@ -264,7 +305,16 @@ function ReasoningRow({
   );
 }
 
-function ToolRow({ call }: { call: ToolCall }) {
+function ToolRow({
+  call,
+  running,
+  onCancel,
+}: {
+  call: ToolCall;
+  /** Present while the server still holds this call; only then can it be cancelled. */
+  running?: RunningTool;
+  onCancel?: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -284,9 +334,14 @@ function ToolRow({ call }: { call: ToolCall }) {
       ? "运行中…"
       : call.status === "failed"
         ? "失败"
-        : call.status === "unknown"
-          ? "未返回"
-          : "完成";
+        : call.status === "cancelled"
+          ? "已取消"
+          : call.status === "timeout"
+            ? "已超时"
+            : call.status === "unknown"
+              ? "未返回"
+              : "完成";
+  const muted = call.status === "cancelled" || call.status === "timeout";
 
   return (
     <Row
@@ -307,7 +362,11 @@ function ToolRow({ call }: { call: ToolCall }) {
           <span
             className={cn(
               "shrink-0 text-[11px]",
-              call.status === "failed" ? "text-destructive" : "text-muted-foreground",
+              call.status === "failed"
+                ? "text-destructive"
+                : muted
+                  ? "text-amber-600 dark:text-amber-400"
+                  : "text-muted-foreground",
             )}
           >
             {state}
@@ -315,7 +374,22 @@ function ToolRow({ call }: { call: ToolCall }) {
         </span>
       }
       trailing={
-        call.result ? (
+        running && onCancel ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 shrink-0 gap-1 px-1.5 text-[11px] text-muted-foreground hover:text-destructive"
+            title="终止这次工具调用；本轮继续，模型会收到你填写的原因"
+            onClick={(event) => {
+              // The row itself toggles; the button must not also expand it.
+              event.stopPropagation();
+              onCancel();
+            }}
+          >
+            <BanIcon className="size-3" />
+            取消
+          </Button>
+        ) : call.result ? (
           <span className="hidden max-w-56 shrink-0 truncate font-mono text-[11px] text-muted-foreground sm:block">
             {snippet(call.result, 60)}
           </span>
@@ -331,6 +405,12 @@ function ToolRow({ call }: { call: ToolCall }) {
           <span className="shrink-0">tool_id</span>
           <code className="min-w-0 break-all">{call.key || "(none)"}</code>
         </div>
+        {running && (
+          <div className="flex gap-2 text-[11px] text-muted-foreground">
+            <span className="shrink-0">超时</span>
+            <span>{running.timeout > 0 ? `${running.timeout} 秒后自动终止` : "不限制"}</span>
+          </div>
+        )}
         {call.args && (
           <div className="flex flex-col gap-0.5 border-t border-border/60 pt-1">
             <span className="text-[11px] text-muted-foreground">参数</span>
@@ -386,11 +466,15 @@ function NoticePill({
       ? `技能 ${String(metadata.skill_name ?? "")}`
       : kind === "system" && extra === "tool_call_limit_extended"
         ? "预算"
-        : kind === "system"
-          ? "系统"
-          : kind && kind.startsWith("step")
-            ? `步骤 ${String(metadata.extra_type ?? "")}`
-            : "事件";
+        : extra === "tool_cancelled"
+          ? "取消"
+          : extra === "tool_timeout"
+            ? "超时"
+            : kind === "system"
+              ? "系统"
+              : kind && kind.startsWith("step")
+                ? `步骤 ${String(metadata.extra_type ?? "")}`
+                : "事件";
   return (
     <div className="flex items-start gap-2 text-xs text-muted-foreground">
       <InfoIcon className="mt-0.5 size-3.5 shrink-0" />
@@ -466,9 +550,14 @@ function thinkingLabel(ms?: number): string | null {
 export function Trace({
   message,
   streaming,
+  runningTools,
+  onCancelTool,
 }: {
   message: ChatMessage;
   streaming: boolean;
+  /** Calls the server is executing right now, so the row can offer 取消. */
+  runningTools?: Record<string, RunningTool>;
+  onCancelTool?: (tool: RunningTool) => void;
 }) {
   const trace: Entry[] =
     message.trace.length > 0
@@ -509,7 +598,16 @@ export function Trace({
           );
         }
         if (item.kind === "tool") {
-          return <ToolRow key={item.key} call={item.call} />;
+          const running = runningTools?.[item.call.key];
+          const live = item.call.status === "running" ? running : undefined;
+          return (
+            <ToolRow
+              key={item.key}
+              call={item.call}
+              running={live}
+              onCancel={live && onCancelTool ? () => onCancelTool(live) : undefined}
+            />
+          );
         }
         const extra = String(item.metadata.extra_type ?? "");
         if (extra === "compaction_started" && compactionSettled) return null;

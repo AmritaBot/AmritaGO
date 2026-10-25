@@ -15,6 +15,7 @@ import hashlib
 import os
 import re
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -52,6 +53,28 @@ _OSC_PREFIX = "]"
 
 class ShellUnavailable(RuntimeError):
     """Raised when the requested shell executable is not installed."""
+
+
+def _terminate(proc: asyncio.subprocess.Process) -> None:
+    """Kill the shell *and* everything it started.
+
+    The shell runs in its own session, so one ``killpg`` reaches the command's
+    children too. Killing only bash would leave a long-running ``journalctl``
+    alive with a closed output pipe — invisible, unkillable from the UI, and
+    still burning CPU after the user cancelled the call.
+    """
+    try:
+        if os.name == "nt":
+            proc.kill()
+        else:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+    except OSError:
+        # Already gone, or a process group we may not signal: fall back to the
+        # direct child, which is the best remaining option.
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
 
 
 def _is_wsl_launcher(path: str | None) -> bool:
@@ -551,6 +574,9 @@ class ShellSession:
                     stderr=asyncio.subprocess.STDOUT,
                     cwd=native_cwd,
                     env=env,
+                    # Own session, so cancelling the call can kill the whole
+                    # tree instead of orphaning the command's children.
+                    start_new_session=os.name != "nt",
                 )
             except OSError as exc:
                 shutil.rmtree(script_dir, ignore_errors=True)
@@ -569,11 +595,13 @@ class ShellSession:
                 raw, _ = await asyncio.wait_for(proc.communicate(), limit)
             except asyncio.TimeoutError:
                 timed_out = True
-                try:
-                    proc.kill()
-                except ProcessLookupError:
-                    pass
+                _terminate(proc)
                 raw, _ = await proc.communicate()
+            except asyncio.CancelledError:
+                # The user cancelled this tool call (or stopped the turn): stop
+                # the command too, then let the cancellation keep unwinding.
+                _terminate(proc)
+                raise
             finally:
                 shutil.rmtree(script_dir, ignore_errors=True)
 

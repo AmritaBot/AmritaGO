@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import {
   api,
   type ConfirmRequest,
+  type RunningTool,
   type StreamEvent,
   type TodoList,
   type ToolLimitRequest,
@@ -130,6 +131,9 @@ export function useChatSocket(sessionId: string | null) {
   const [pendingConfirm, setPendingConfirm] = useState<ConfirmRequest | null>(null);
   //: The run spent its tool budget and is parked until this is answered.
   const [limitRequest, setLimitRequest] = useState<ToolLimitRequest | null>(null);
+  //: Tool calls the server is executing right now, keyed by ``tool_id``. Only
+  //: these may be cancelled; anything else has already finished.
+  const [runningTools, setRunningTools] = useState<Record<string, RunningTool>>({});
   const [todos, setTodos] = useState<TodoList | null>(null);
   //: Messages the next request will carry. Comes from the usage endpoint on
   //: load and from each finished turn, so a reload and a live run agree.
@@ -309,6 +313,7 @@ export function useChatSocket(sessionId: string | null) {
             tools: event.tools,
           });
           setLiveUsage(null);
+          setRunningTools({});
           startedAtRef.current = Date.now();
           firstDeltaRef.current = null;
           // A repeated `start` means the server replayed the buffer from the
@@ -407,6 +412,37 @@ export function useChatSocket(sessionId: string | null) {
           setTodos(event.todos);
           break;
         }
+        case "confirm_closed": {
+          // The call behind the prompt was cancelled or the turn stopped: the
+          // question is gone, so the dialog must go with it.
+          setPendingConfirm((prev) =>
+            prev && prev.request_id === event.request_id ? null : prev,
+          );
+          break;
+        }
+        case "tool_running": {
+          // A cancel button is only truthful while the server still holds the
+          // call, so this event opens the window and ``tool_finished`` closes it.
+          setRunningTools((prev) => ({
+            ...prev,
+            [event.tool_id]: {
+              tool_id: event.tool_id,
+              tool: event.tool,
+              timeout: event.timeout,
+              started_at: event.started_at,
+            },
+          }));
+          break;
+        }
+        case "tool_finished": {
+          setRunningTools((prev) => {
+            if (!(event.tool_id in prev)) return prev;
+            const next = { ...prev };
+            delete next[event.tool_id];
+            return next;
+          });
+          break;
+        }
         case "limit": {
           // The run is parked inside the tool loop until this is answered, so a
           // timeout winds it down rather than leaving it hanging.
@@ -433,6 +469,7 @@ export function useChatSocket(sessionId: string | null) {
           );
           activeIdRef.current = null;
           setBusy(false);
+          setRunningTools({});
           break;
         }
         case "done": {
@@ -440,6 +477,7 @@ export function useChatSocket(sessionId: string | null) {
           // publishes it to terminate the stream); don't clear the error.
           finalizeAssistant({ usage: event.usage ?? null, live: null });
           setLiveUsage(null);
+          setRunningTools({});
           if (event.usage?.context_messages != null) {
             setContextMessages(event.usage.context_messages);
           }
@@ -548,6 +586,7 @@ export function useChatSocket(sessionId: string | null) {
       setBusy(false);
       setLiveUsage(null);
       setPendingConfirm(null);
+      setRunningTools({});
       if (isMockMode()) {
         // A test turn is never persisted, so there is no history to load and
         // keeping an older transcript on screen would be misleading.
@@ -744,6 +783,7 @@ export function useChatSocket(sessionId: string | null) {
     }
     finalizeAssistant();
     streamIdRef.current = null;
+    setRunningTools({});
   }, [clearMock, finalizeAssistant, sessionId]);
 
   /**
@@ -859,6 +899,43 @@ export function useChatSocket(sessionId: string | null) {
     [handleEvent, limitRequest, sessionId],
   );
 
+  /**
+   * Cancel one running tool call.
+   *
+   * The turn keeps going: the server hands the reason to the model as the
+   * tool's result, so it can choose another approach instead of the whole run
+   * dying mid-loop.
+   */
+  const cancelTool = useCallback(
+    (toolId: string, reason: string) => {
+      if (isMockMode()) {
+        // Test mode has no server to ask; drop the local entry so the button
+        // disappears the way a real ``tool_finished`` would make it.
+        setRunningTools((prev) => {
+          const next = { ...prev };
+          delete next[toolId];
+          return next;
+        });
+        return true;
+      }
+      const socket = socketRef.current;
+      if (!socket || socket.readyState !== WebSocket.OPEN || !sessionId) {
+        toast.error("连接已断开，无法取消这个工具调用");
+        return false;
+      }
+      socket.send(
+        JSON.stringify({
+          type: "tool_cancel",
+          session_id: sessionId,
+          tool_id: toolId,
+          reason,
+        }),
+      );
+      return true;
+    },
+    [sessionId],
+  );
+
   /** Forget the plan locally and on disk. */
   const clearTodos = useCallback(() => {
     setTodos(null);
@@ -884,6 +961,8 @@ export function useChatSocket(sessionId: string | null) {
       limitRequest,
       resolveLimit,
       sendConfirm,
+      runningTools,
+      cancelTool,
       clearTodos,
       reload,
     }),
@@ -905,6 +984,8 @@ export function useChatSocket(sessionId: string | null) {
       limitRequest,
       resolveLimit,
       sendConfirm,
+      runningTools,
+      cancelTool,
       clearTodos,
       reload,
     ],

@@ -85,17 +85,22 @@ uv run python -m app
 
 ## 构建发布包
 
-从仓库根目录先构建前端，再构建后端发行包：
+从仓库根目录运行打包脚本，它按顺序构建前端、打包后端，并在结束后清理临时文件：
 
 ```bash
-cd frontend
-bun install
-bun run build
-cd ../backend
-uv build
+cd frontend && bun install && cd ..
+bash scripts/package.sh
 ```
 
+脚本做三件事：
+
+- 构建前端（`frontend/dist`），已构建好时可加 `--skip-frontend` 复用；
+- 把仓库根目录的 `LICENSE` 复制到 `backend/LICENSE`，因为 hatchling 只打包 `backend/` 下的文件；构建结束（包括失败或 Ctrl-C）后自动删除这份副本，工作树不会留下重复文件；
+- 打包后校验产物：必须含 `LICENSE` 与 `License-File` 元数据、必须含前端 `index.html`、且不得混入任何 `node_modules` 条目，否则构建失败。
+
 wheel 会把前端文件打包到 `app/_frontend`；sdist 也包含 `frontend/dist`。若构建时找不到 `frontend/dist/index.html`，构建钩子会尝试用 Bun 自动构建，失败时会显式报错。使用预先构建好的其他前端目录时可设置 `AMRITA_GO_FRONTEND_SRC`。
+
+前端默认不生成 source map（约占产物体积的三分之二）；需要调试生产构建时设置 `AMRITA_GO_SOURCEMAP=1` 再构建。
 
 ## 网络与运行安全
 

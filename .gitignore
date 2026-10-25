@@ -22,3 +22,7 @@ __pycache__/
 *.log
 .DS_Store
 .env
+
+# Copied in by scripts/package.sh for the duration of a build; the real file
+# lives at the repository root and a stale copy must never be committed.
+backend/LICENSE

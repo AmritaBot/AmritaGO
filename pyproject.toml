@@ -1,0 +1,17 @@
+[tool.uv.workspace] # Just a stub for backend.
+members = ["backend"]
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.414",
+    "ruff>=0.17.2",
+    "hatching>=0.0.1",
+]
+
+
+[tool.pyright]
+typeCheckingMode = "standard"
+venvPath = "."
+venv = ".venv"
+include = ["backend/app"]
+exclude = ["**/__pycache__", "frontend"]

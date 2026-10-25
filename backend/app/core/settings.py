@@ -50,6 +50,14 @@ class AppSettings(BaseModel):
     """Wind-down LLM requests after the budget is spent, applied to ``agent_tool_refusal_rounds``."""
     tool_limit_timeout: float = Field(default=300.0, ge=10, le=3600)
     """How long the parked run waits for an answer before winding down."""
+    tool_timeout: float = Field(default=600.0, ge=0, le=86400)
+    """Wall-clock limit for one tool call, in seconds.
+
+    ``0`` disables it. This is the outer bound: a tool that enforces a shorter
+    limit of its own (the shell plugin's ``timeout`` argument) still returns
+    first. It also covers a tool parked on a confirmation prompt, so keep it
+    above ``audit_timeout`` unless a shorter leash is what you want.
+    """
     legacy_presets_imported: bool = False
     """``presets/*.json`` imported once; set to ``false`` to re-run the import."""
     updated_at: float = Field(default_factory=time.time)

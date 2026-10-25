@@ -100,6 +100,7 @@ from app.runtime.sessions import (
     save_meta,
 )
 from app.runtime.stream_hub import HUB, StreamChannel
+from app.runtime.tool_gate import TOOLS
 from app.runtime.workflows import WORKFLOWS
 from app.tools.shell import SHELLS, available_shells
 
@@ -132,6 +133,8 @@ class SettingsUpdate(BaseModel):
     # Refusal rounds granted to a cut-off run so it can close the turn civilly.
     tool_limit_refusal_rounds: int | None = Field(default=None, ge=1, le=50)
     tool_limit_timeout: float | None = Field(default=None, ge=10, le=3600)
+    # Wall-clock limit for one tool call; ``0`` disables it.
+    tool_timeout: float | None = Field(default=None, ge=0, le=86400)
 
 
 class ModelPayload(BaseModel):
@@ -1298,6 +1301,8 @@ async def chat_socket(websocket: WebSocket) -> None:
           start a turn (returns immediately; events arrive on this socket)
       ``{"type": "resume", "session_id": "...", "stream_id": "..."}``
           replay a buffer from the beginning and continue live
+      ``{"type": "tool_cancel", "tool_id": "...", "reason": "..."}``
+          stop one running tool call; the turn continues with the reason
       ``{"type": "ping"}``
     """
     await websocket.accept()
@@ -1355,6 +1360,8 @@ async def chat_socket(websocket: WebSocket) -> None:
                     BROKER.reject_all("用户中止了本轮，确认请求已取消。")
                     # Same for a parked budget gate: answer it now.
                     LIMITS.reject_all()
+                    # And release any tool call that is racing a cancel future.
+                    TOOLS.cancel_all("用户中止了本轮")
                     channel.cancel()
                     await channel.publish(
                         {"type": "done", "usage": None, "title": None, "message_count": None}
@@ -1382,6 +1389,19 @@ async def chat_socket(websocket: WebSocket) -> None:
                 if not ok:
                     await websocket.send_text(
                         _frame({"type": "error", "message": "这个预算询问已过期"})
+                    )
+                continue
+
+            if kind == "tool_cancel":
+                # The reason is fed back to the model, so it may retry a
+                # different way instead of repeating the cancelled call.
+                ok = TOOLS.cancel(
+                    str(payload.get("tool_id") or ""),
+                    str(payload.get("reason") or ""),
+                )
+                if not ok:
+                    await websocket.send_text(
+                        _frame({"type": "error", "message": "这个工具调用已经结束"})
                     )
                 continue
 

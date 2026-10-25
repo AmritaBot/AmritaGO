@@ -61,7 +61,10 @@ const result = await Bun.build({
   plugins: [plugin],
   minify: true,
   target: "browser",
-  sourcemap: "linked",
+  // Source maps are ~16 MiB — two thirds of the bundle — and mean nothing to a
+  // shipped SPA, so they are opt-in: set AMRITA_GO_SOURCEMAP=1 to debug a
+  // production build.
+  sourcemap: process.env.AMRITA_GO_SOURCEMAP ? "linked" : "none",
   splitting: true,
   tsconfig: path.join(root, "tsconfig.json"),
   // Hashed bundles go under assets/ (the backend mounts that directory). The

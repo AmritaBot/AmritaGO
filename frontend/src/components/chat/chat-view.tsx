@@ -28,12 +28,13 @@ import {
   type WorkspaceOption,
 } from "@/components/chat/composer";
 import { Button } from "@/components/ui/button";
+import { PromptDialog } from "@/components/ui/prompt-dialog";
 import {
   type ChatMessage,
   useChatSocket as useChatSocketFor,
 } from "@/hooks/use-chat-socket";
 import { api } from "@/lib/api";
-import type { ModelOption } from "@/lib/api";
+import type { ModelOption, RunningTool } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 
@@ -215,12 +216,17 @@ function MessageBubble({
   message,
   onBranch,
   onRetry,
+  runningTools,
+  onCancelTool,
 }: {
   message: ChatMessage;
   /** Fork the conversation at this message. Offered for both roles. */
   onBranch?: (entryId: string) => void;
   /** Re-send the prompt behind a failed turn. Only wired up for errors. */
   onRetry?: () => void;
+  /** Live tool calls, so a running row can offer 取消. */
+  runningTools?: Record<string, RunningTool>;
+  onCancelTool?: (tool: RunningTool) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const isUser = message.role === "user";
@@ -303,7 +309,12 @@ function MessageBubble({
     <div className="group min-w-0">
         {/* Thinking and tool calls are one timeline: the order is the
             information, so neither is hoisted above the answer. */}
-        <Trace message={message} streaming={message.streaming} />
+        <Trace
+          message={message}
+          streaming={message.streaming}
+          runningTools={runningTools}
+          onCancelTool={onCancelTool}
+        />
 
         {message.content ? (
           <Markdown content={message.content} streaming={message.streaming} />
@@ -503,8 +514,12 @@ export function ChatView({
     retry,
     limitRequest,
     resolveLimit,
+    runningTools,
+    cancelTool,
   } = useChatSocketFor(sessionId);
   const [permission, setPermission] = useState<Permission>("workspace");
+  //: The tool call the user asked to cancel; the dialog collects the reason.
+  const [cancelTarget, setCancelTarget] = useState<RunningTool | null>(null);
   const [pending, setPending] = useState<PendingAttachment[]>([]);
   const [uploading, setUploading] = useState(0);
   const scroller = useRef<HTMLDivElement>(null);
@@ -730,6 +745,8 @@ export function ChatView({
               key={message.id}
               message={message}
               onBranch={onBranch}
+              runningTools={runningTools}
+              onCancelTool={setCancelTarget}
               // Only a finished, failed turn can be retried: a live one is
               // stopped first, and ``send`` refuses while the socket is busy.
               onRetry={message.error && !busy ? retry : undefined}
@@ -812,6 +829,30 @@ export function ChatView({
         />
       </div>
       <AuditDialog request={pendingConfirm} onSubmit={sendConfirm} />
+      <PromptDialog
+        open={cancelTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setCancelTarget(null);
+        }}
+        title="取消这次工具调用？"
+        description={
+          cancelTarget ? (
+            <>
+              将终止 <code className="font-mono">{cancelTarget.tool}</code>，
+              但本轮不会结束：原因会作为这次调用的结果交给模型，
+              它可以用别的方式接着做。
+            </>
+          ) : null
+        }
+        label="取消原因"
+        placeholder="例如：这条命令不该跑，换成只读的检查"
+        confirmLabel="取消这次调用"
+        onSubmit={(reason) => {
+          const target = cancelTarget;
+          if (!target) return null;
+          return cancelTool(target.tool_id, reason) ? null : "没有连上服务端，请稍后再试";
+        }}
+      />
     </div>
   );
 }

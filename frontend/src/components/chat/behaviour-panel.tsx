@@ -45,6 +45,7 @@ export function BehaviourPanel({
     text(settings.tool_limit_refusal_rounds, 5),
   );
   const [timeout, setTimeoutValue] = useState(text(settings.tool_limit_timeout, 300));
+  const [toolTimeout, setToolTimeout] = useState(text(settings.tool_timeout, 600));
   const [saving, setSaving] = useState(false);
 
   const save = async (patch: Partial<AppSettings>) => {
@@ -55,6 +56,7 @@ export function BehaviourPanel({
       setExtension(text(saved.tool_limit_extension, 5));
       setRefusalRequests(text(saved.tool_limit_refusal_rounds, 5));
       setTimeoutValue(text(saved.tool_limit_timeout, 300));
+      setToolTimeout(text(saved.tool_timeout, 600));
       toast.success("已保存");
     } catch (error) {
       toast.error(`保存失败：${String(error).replace(/^Error:\s*/, "")}`);
@@ -205,6 +207,46 @@ export function BehaviourPanel({
         模型直接从当前上下文继续，不新开会话、不重放历史。
         能继续多少次由你决定——服务端不会替你划一个上限。
       </p>
+
+      <section className="flex flex-col gap-3 rounded-lg border border-border p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-sm font-medium">工具执行</h3>
+          <InfoHint label="工具超时说明">
+            单次工具调用的<strong>墙钟上限</strong>。超过就终止这次调用，
+            把「已超时」作为结果交给模型，本轮继续——不是杀掉整个回答。
+            填 <code>0</code> 表示不限制。工具自己设的更短上限（例如 shell 的{" "}
+            <code>timeout</code> 参数）会先到，因此仍然生效；等待人工确认的时间也算在这里，
+            所以请保持它大于确认等待上限。
+          </InfoHint>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-4">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="tool-timeout">全局超时（秒）</Label>
+            <Input
+              id="tool-timeout"
+              type="number"
+              min={0}
+              max={86400}
+              value={toolTimeout}
+              disabled={saving}
+              onChange={(event) => setToolTimeout(event.target.value)}
+              className="w-32"
+            />
+          </div>
+          <Button
+            disabled={saving}
+            onClick={() => void save({ tool_timeout: Number(toolTimeout) })}
+          >
+            保存
+          </Button>
+        </div>
+
+        <p className="text-xs text-muted-foreground">
+          运行中的工具调用可以在对话里的那一行直接「取消」，并填写原因；
+          原因会作为工具结果交给模型，它可以用别的方式继续。
+        </p>
+      </section>
     </div>
   );
 }

@@ -342,6 +342,23 @@ export function startMockTurn({
       }),
     460,
   );
+  // The window in which the real backend would accept a cancel. It is short
+  // here on purpose: the mock only has to prove the button appears and leaves.
+  schedule(
+    () =>
+      onEvent({
+        type: "tool_running",
+        tool_id: toolId,
+        tool: "mock_tool",
+        timeout: 600,
+        started_at: Date.now() / 1000,
+      }),
+    470,
+  );
+  schedule(
+    () => onEvent({ type: "tool_finished", tool_id: toolId, outcome: "done" }),
+    520,
+  );
   schedule(
     () =>
       onEvent({

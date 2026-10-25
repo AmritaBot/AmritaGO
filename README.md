@@ -39,3 +39,7 @@ uv run python -m app
 ## 反馈
 
 提交问题前请确认使用的 AmritaGO 版本、操作系统和安装方式，并清除日志中的 API Key、令牌、个人路径等敏感信息。Alpha 阶段的配置和插件接口可能随版本变化。
+
+## 许可协议
+
+[AGPL-3.0-only](LICENSE)

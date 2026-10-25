@@ -1,6 +1,6 @@
 [project]
 name = "amrita-go"
-version = "0.1.0a1"
+version = "0.1.0a2"
 description = "A agent workstation built on AmritaCore"
 requires-python = ">=3.10,<3.15"
 dependencies = [
@@ -14,6 +14,10 @@ dependencies = [
   "keyring>=25.0 ; sys_platform == 'linux'",
   "faskill[amrita]>=0.3.0",
 ]
+license = "AGPL-3.0-or-later"
+# Hatchling only packs files under backend/, so the build copies the
+# repository's LICENSE in (scripts/package.sh) and removes it afterwards.
+license-files = ["LICENSE"]
 
 [project.optional-dependencies]
 dev = ["ruff>=0.12.8"]
@@ -60,23 +64,4 @@ ignore = [
 "app/tools/shell.py" = ["ASYNC240"]
 "scripts/*.py" = ["ASYNC210", "E402", "ASYNC110"]
 
-[tool.pyright]
-typeCheckingMode = "standard"
-venvPath = "."
-venv = ".venv"
-# The venv is a Windows layout (Lib/site-packages). Pyright launched from WSL
-# looks for lib/pythonX.Y/site-packages, so point it at the real directory.
-extraPaths = [".venv/Lib/site-packages"]
-include = ["app"]
-exclude = ["**/__pycache__", "../frontend"]
 
-# Use the sibling AmritaCore checkout so the agent always runs against the
-# framework source you are developing with.
-[tool.uv.sources]
-amrita-core = { path = "../../AmritaCore", editable = true }
-
-[dependency-groups]
-dev = [
-    "pyright>=1.1.414",
-    "ruff>=0.17.2",
-]
