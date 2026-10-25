@@ -226,6 +226,11 @@ async def branch_session(
         for entry in keep:
             if entry.role not in {"user", "assistant"} or not entry.content.strip():
                 continue
+            # Slash commands are UI-only: they were never in the model's context,
+            # so replaying them here would feed the branch a conversation the
+            # original never had.
+            if entry.workflow == "command":
+                continue
             role: Literal["user", "assistant"] = "user" if entry.role == "user" else "assistant"
             rebuilt.append(Message(role=role, content=entry.content))
         memory.messages = rebuilt
