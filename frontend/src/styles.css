@@ -1,0 +1,437 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "katex/dist/katex.min.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --radius: 0.65rem;
+  /* Light: cool paper background, deep navy ink, warm amber accent.
+     The neutrals are deliberately blue-tinted so the light theme reads as
+     "the same product" as the dark one rather than a white spreadsheet. */
+  --background: oklch(0.971 0.004 247);
+  --foreground: oklch(0.21 0.04 255);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.04 255);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.04 255);
+  --primary: oklch(0.28 0.07 250);
+  --primary-foreground: oklch(0.985 0.002 247);
+  --secondary: oklch(0.945 0.006 247);
+  --secondary-foreground: oklch(0.28 0.07 250);
+  --muted: oklch(0.949 0.006 247);
+  --muted-foreground: oklch(0.53 0.03 250);
+  --accent: oklch(0.94 0.02 85);
+  --accent-foreground: oklch(0.32 0.06 70);
+  --destructive: oklch(0.577 0.245 27.3);
+  --border: oklch(0.9 0.008 247);
+  --input: oklch(0.9 0.008 247);
+  --ring: oklch(0.76 0.13 80);
+  --chart-1: oklch(0.55 0.14 250);
+  --chart-2: oklch(0.7 0.13 80);
+  --chart-3: oklch(0.62 0.11 160);
+  --chart-4: oklch(0.6 0.16 300);
+  --chart-5: oklch(0.65 0.16 25);
+  --sidebar: oklch(0.971 0.004 247);
+  --sidebar-foreground: oklch(0.24 0.04 255);
+  --sidebar-primary: oklch(0.28 0.07 250);
+  --sidebar-primary-foreground: oklch(0.985 0.002 247);
+  --sidebar-accent: oklch(0.945 0.008 247);
+  --sidebar-accent-foreground: oklch(0.24 0.04 255);
+  --sidebar-border: oklch(0.91 0.008 247);
+  --sidebar-ring: oklch(0.76 0.13 80);
+}
+
+.dark {
+  /* Dark: midnight navy, cool ink, amber accent on a raised card. */
+  --background: oklch(0.16 0.03 250);
+  --foreground: oklch(0.96 0.006 250);
+  --card: oklch(0.2 0.035 250);
+  --card-foreground: oklch(0.96 0.006 250);
+  --popover: oklch(0.21 0.035 250);
+  --popover-foreground: oklch(0.96 0.006 250);
+  --primary: oklch(0.7 0.07 240);
+  --primary-foreground: oklch(0.17 0.03 250);
+  --secondary: oklch(0.25 0.033 250);
+  --secondary-foreground: oklch(0.96 0.006 250);
+  --muted: oklch(0.25 0.033 250);
+  --muted-foreground: oklch(0.62 0.04 245);
+  --accent: oklch(0.29 0.045 250);
+  --accent-foreground: oklch(0.96 0.006 250);
+  --destructive: oklch(0.7 0.19 22);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.78 0.1 80);
+  --chart-1: oklch(0.7 0.1 245);
+  --chart-2: oklch(0.78 0.13 80);
+  --chart-3: oklch(0.7 0.11 165);
+  --chart-4: oklch(0.7 0.14 300);
+  --chart-5: oklch(0.72 0.15 25);
+  --sidebar: oklch(0.19 0.035 250);
+  --sidebar-foreground: oklch(0.93 0.007 250);
+  --sidebar-primary: oklch(0.7 0.07 240);
+  --sidebar-primary-foreground: oklch(0.17 0.03 250);
+  --sidebar-accent: oklch(0.26 0.033 250);
+  --sidebar-accent-foreground: oklch(0.97 0.005 250);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.78 0.1 80);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--ring) 35%, transparent);
+  }
+}
+
+/* Scrollbars */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--foreground) 22%, transparent)
+    transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--foreground) 20%, transparent);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--foreground) 34%, transparent);
+  background-clip: content-box;
+}
+
+/* Markdown */
+
+.md {
+  @apply text-[0.95rem] leading-7;
+}
+
+.md > * + * {
+  margin-top: 0.75em;
+}
+
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  @apply font-semibold tracking-tight;
+  margin-top: 1.4em;
+}
+
+.md h1 {
+  @apply text-xl;
+}
+
+.md h2 {
+  @apply text-lg;
+}
+
+.md h3 {
+  @apply text-base;
+}
+
+.md a {
+  @apply text-primary underline decoration-primary/30 underline-offset-4 hover:decoration-primary;
+}
+
+.md ul,
+.md ol {
+  @apply pl-6;
+}
+
+.md ul {
+  @apply list-disc;
+}
+
+.md ol {
+  @apply list-decimal;
+}
+
+.md li + li {
+  margin-top: 0.25em;
+}
+
+.md blockquote {
+  @apply border-l-2 border-border pl-4 text-muted-foreground italic;
+}
+
+.md code:not(pre code) {
+  @apply rounded bg-muted px-1.5 py-0.5 font-mono text-[0.85em];
+}
+
+.md pre {
+  @apply overflow-x-auto rounded-lg border border-border bg-muted/60 p-3 text-[0.85rem] leading-6;
+}
+
+.md pre code {
+  @apply bg-transparent p-0;
+}
+
+.md table {
+  @apply w-full border-collapse text-sm;
+}
+
+.md th,
+.md td {
+  @apply border border-border px-3 py-1.5 text-left align-top;
+}
+
+.md th {
+  @apply bg-muted/60 font-medium;
+}
+
+.md hr {
+  @apply my-6 border-border;
+}
+
+.md img {
+  @apply max-w-full rounded-lg;
+}
+
+.md .katex-display {
+  @apply overflow-x-auto overflow-y-hidden py-1;
+}
+
+/* A sent user message sits on the primary colour, so the shared Markdown rules
+   (which assume a page-coloured background) would paint dark-on-dark. Keep the
+   same structure, swap the palette to the bubble's foreground. */
+.md-user {
+  @apply text-sm leading-6 max-sm:text-[15px] max-sm:leading-7;
+}
+
+/* A bubble is not a document: a `#` heading should not dwarf the text around
+   it, and the first block must not push the bubble's top padding open. */
+.md-user > :first-child {
+  margin-top: 0;
+}
+
+.md-user h1,
+.md-user h2,
+.md-user h3,
+.md-user h4 {
+  @apply text-sm font-semibold;
+  margin-top: 0.9em;
+}
+
+.md-user a {
+  @apply text-primary-foreground underline decoration-primary-foreground/40 underline-offset-4 hover:decoration-primary-foreground;
+}
+
+.md-user blockquote {
+  @apply border-primary-foreground/30 text-primary-foreground/80;
+}
+
+.md-user code:not(pre code) {
+  @apply bg-primary-foreground/15 text-primary-foreground;
+}
+
+.md-user pre {
+  @apply border-primary-foreground/20 bg-black/25 text-primary-foreground;
+}
+
+.md-user th,
+.md-user td {
+  @apply border-primary-foreground/25;
+}
+
+.md-user th {
+  @apply bg-primary-foreground/10;
+}
+
+.md-user hr {
+  @apply border-primary-foreground/25;
+}
+
+.md-user .katex {
+  @apply text-primary-foreground;
+}
+
+/* Syntax highlighting for fenced code blocks.
+   Only structure is coloured — keywords, strings, comments, numbers — so a
+   screenshot of an answer stays readable and the palette follows the theme
+   instead of being baked into a tokenizer. */
+.tok-keyword {
+  @apply font-medium text-violet-700 dark:text-violet-300;
+}
+
+.tok-literal {
+  @apply text-amber-700 dark:text-amber-300;
+}
+
+.tok-string {
+  @apply text-emerald-700 dark:text-emerald-300;
+}
+
+.tok-number {
+  @apply text-orange-700 dark:text-orange-300;
+}
+
+.tok-comment {
+  @apply text-muted-foreground italic;
+}
+
+.tok-function {
+  @apply text-sky-700 dark:text-sky-300;
+}
+
+.tok-tag {
+  @apply text-rose-700 dark:text-rose-300;
+}
+
+.tok-attr {
+  @apply text-sky-700 dark:text-sky-300;
+}
+
+.tok-punct {
+  @apply text-muted-foreground;
+}
+
+.tok-meta {
+  @apply text-fuchsia-700 dark:text-fuchsia-300;
+}
+
+/* Dialogs: no animation at all.
+   Radix unmounts on `animationend`, and in this build the enter/exit
+   animations from tw-animate-css never advance — the result was a content node
+   frozen at 95% scale that stayed on top of the page after closing, swallowing
+   every click. Correctness beats a 150 ms fade. */
+[data-slot="dialog-content"],
+[data-slot="dialog-overlay"] {
+  animation: none !important;
+}
+
+[data-slot="dialog-content"][data-state="closed"],
+[data-slot="dialog-overlay"][data-state="closed"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Blinking caret while the answer is still streaming. */
+.md-streaming > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: 0.45em;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: currentColor;
+  opacity: 0.65;
+  animation: caret 1s steps(2, start) infinite;
+}
+
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* "Thinking…" label: a band of light sweeps across the text. Text is cut out
+   of a moving gradient, so the sweep works on both themes without a colour of
+   its own. Respects reduced-motion (falls back to plain muted text). */
+.thinking-sheen {
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--muted-foreground) 60%, transparent) 10%,
+    var(--foreground) 45%,
+    color-mix(in oklab, var(--muted-foreground) 60%, transparent) 80%
+  );
+  background-size: 220% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: sheen 2.2s linear infinite;
+}
+
+@keyframes sheen {
+  from {
+    background-position: 160% 0;
+  }
+  to {
+    background-position: -60% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thinking-sheen {
+    background-image: none;
+    background-clip: border-box;
+    -webkit-background-clip: border-box;
+    color: var(--muted-foreground);
+    animation: none;
+  }
+}
+
+/* Mermaid */
+
+.mermaid-block {
+  @apply my-3 overflow-x-auto rounded-lg border border-border bg-card p-3;
+}
+
+.mermaid-block svg {
+  @apply mx-auto h-auto max-w-full;
+}
+
+.mermaid-error {
+  @apply rounded-md border border-destructive/40 bg-destructive/5 p-3 font-mono text-xs whitespace-pre-wrap text-destructive;
+}

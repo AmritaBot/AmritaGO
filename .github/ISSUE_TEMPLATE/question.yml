@@ -1,0 +1,53 @@
+name: 使用问题
+description: 询问 AmritaGO 的安装、配置或使用方式
+title: '[使用问题] '
+labels: [question,help wanted]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先查看仓库 `docs/` 中的中文指南。不要在问题中提交 API Key、令牌、`secret.key` 或未脱敏的会话内容。
+  - type: input
+    id: version
+    attributes:
+      label: AmritaGO 版本
+      description: 发布包版本，或源码仓库的 Git commit 短哈希。
+      placeholder: "0.1.0a1 / abc1234"
+    validations:
+      required: true
+  - type: dropdown
+    id: operating-system
+    attributes:
+      label: 操作系统
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - 其他
+    validations:
+      required: true
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: 安装方式
+      options:
+        - uvx / PyPI
+        - 从源码运行
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: 你的问题
+      description: 请说明你正在做什么、遇到什么困难，以及已经尝试过哪些步骤。
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: 相关信息
+      description: 可选。可提供去敏后的错误信息或配置片段，请勿粘贴密钥和个人数据。
+      render: shell
+    validations:
+      required: false

@@ -1,0 +1,72 @@
+"""Hatch build hook that bundles the built SPA into the backend artifacts.
+
+The frontend is a separate Bun project, so without this hook ``uv build`` would
+produce a wheel that only contains Python sources — the FastAPI server would
+then start without any UI to serve. The hook guarantees ``frontend/dist``
+exists (building it with Bun when necessary) and maps it to ``app/_frontend``
+inside the wheel, where :data:`app.core.config.BUNDLED_FRONTEND` looks for it.
+
+The sdist carries the same files under ``frontend/dist`` so that a wheel built
+from the sdist does not need Bun or the frontend sources.
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+from pathlib import Path
+from typing import Any
+
+from hatchling.builders.hooks.plugin.interface import BuildHookInterface
+
+WHEEL_TARGET = "app/_frontend"
+SDIST_TARGET = "frontend/dist"
+
+_MISSING = (
+    "frontend/dist/index.html is missing and could not be built (Bun is not "
+    "available or `bun run build` failed). Run `bun install && bun run build` "
+    "in frontend/ before packaging, or point AMRITA_GO_FRONTEND_SRC at a "
+    "directory containing built assets."
+)
+
+
+class FrontendBuildHook(BuildHookInterface):
+    PLUGIN_NAME = "custom"
+
+    def initialize(self, version: str, build_data: dict[str, Any]) -> None:
+        # Editable installs read from the source tree anyway, so keep them lean
+        # instead of copying the bundle into site-packages on every sync.
+        if version == "editable":
+            return
+        dist = self._dist_dir()
+        target = SDIST_TARGET if self.target_name == "sdist" else WHEEL_TARGET
+        build_data.setdefault("force_include", {})[str(dist)] = target
+
+    def _dist_dir(self) -> Path:
+        root = Path(self.root)
+        frontend = root.parent / "frontend"
+        candidates = [
+            frontend / "dist",  # repository checkout
+            root / SDIST_TARGET,  # wheel built from our own sdist
+            root.parent / "frontend-dist",  # prebuilt artifacts next to backend
+        ]
+        env = os.environ.get("AMRITA_GO_FRONTEND_SRC")
+        if env:
+            candidates.insert(0, Path(env).expanduser())
+
+        for candidate in candidates:
+            if (candidate / "index.html").is_file():
+                return candidate.resolve()
+
+        self._build(frontend)
+        dist = frontend / "dist"
+        if not (dist / "index.html").is_file():
+            raise RuntimeError(_MISSING)
+        return dist.resolve()
+
+    def _build(self, frontend: Path) -> None:
+        bun = os.environ.get("BUN") or shutil.which("bun")
+        if bun is None or not (frontend / "build.ts").is_file():
+            raise RuntimeError(_MISSING)
+        subprocess.run([bun, "run", "build"], cwd=frontend, check=True)

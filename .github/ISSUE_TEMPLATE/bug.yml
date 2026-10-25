@@ -1,0 +1,69 @@
+name: Bug 反馈
+description: 报告 AmritaGO 的异常行为
+title: '[Bug] '
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        AmritaGO 目前处于 Alpha 阶段。提交前请确认没有相同问题；日志和截图中请删除 API Key、令牌、个人路径及其他敏感信息。
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: 安装方式
+      options:
+        - uvx / PyPI
+        - 从源码运行
+        - 其他
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: AmritaGO 版本
+      description: 发布包版本，或源码仓库的 Git commit 短哈希。
+      placeholder: "0.1.0a1 / abc1234"
+    validations:
+      required: true
+  - type: dropdown
+    id: operating-system
+    attributes:
+      label: 操作系统
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: 请提供可重复的最小步骤；可用占位值替换密钥、文件名和个人信息。
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果
+      description: 发生了什么？如有错误，请粘贴去敏后的完整错误信息。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期结果
+      description: 你期望 AmritaGO 如何表现？
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志或截图
+      description: 可选。提交前请再次确认已移除 API Key、令牌、会话内容和个人路径。
+      render: shell

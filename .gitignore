@@ -1,0 +1,24 @@
+# Workspace-scoped agent directory.
+#
+# Skills are project knowledge and should be committed:
+#   .amrita/skills/<name>/SKILL.md
+# Memory (conversations, config, presets) is personal state and never belongs in
+# a repo — and presets carry API keys.
+.amrita/sessions/
+.amrita/settings.json
+.amrita/core.json
+.amrita/mcp.json
+.amrita/presets/
+.amrita/*.local.json
+
+# Build output / tooling
+node_modules/
+dist/
+.dev-build/
+.venv/
+__pycache__/
+*.py[cod]
+.uv/
+*.log
+.DS_Store
+.env
