@@ -28,17 +28,17 @@ class StreamChannel:
         self.done = False
         self.cancelled = False
         self.error: str | None = None
-        #: The user answered "继续迭代": a new turn follows once this one winds down.
+        # The user answered "继续迭代": a new turn follows once this one winds down.
         self.continue_requested = False
-        #: Cut off at the gate: nothing follows, no summary and no last model call.
+        # Cut off at the gate: nothing follows, no summary and no last model call.
         self.aborted = False
-        #: Turns chained so far, reported for information.
+        # Turns chained so far, reported for information.
         self.continuations = 0
         self._buf = StringIO()
         self._lock = asyncio.Lock()
         self._version = 0
         self._changed = asyncio.Event()
-        #: Set by whoever started the run, so the socket can cancel it.
+        # Set by whoever started the run, so the socket can cancel it.
         self.task: asyncio.Task[None] | None = None
 
     def cancel(self) -> None:

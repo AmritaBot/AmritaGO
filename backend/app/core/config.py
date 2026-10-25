@@ -11,14 +11,14 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-#: Repository root (…/AmritaAgent), three levels above this file
-#: (``core`` -> ``app`` -> ``backend`` -> repo).
+# Repository root (…/AmritaAgent), three levels above this file
+# (``core`` -> ``app`` -> ``backend`` -> repo).
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
-#: Package directory (``…/app``); bundled assets sit next to the code.
+# Package directory (``…/app``); bundled assets sit next to the code.
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 
-#: SPA bundle shipped inside the wheel by ``backend/hatch_build.py``.
+# SPA bundle shipped inside the wheel by ``backend/hatch_build.py``.
 BUNDLED_FRONTEND = PACKAGE_ROOT / "_frontend"
 
 
@@ -134,11 +134,11 @@ class Paths:
 
 PATHS = Paths()
 
-#: Host / port for the bundled uvicorn runner.
+# Host / port for the bundled uvicorn runner.
 HOST = os.environ.get("AMRITA_GO_HOST", "127.0.0.1")
 PORT = int(os.environ.get("AMRITA_GO_PORT", "8000"))
 
-#: Fallback prompt for a preset with no body; the prompt belongs to the preset.
+# Fallback prompt for a preset with no body; the prompt belongs to the preset.
 DEFAULT_SYSTEM_PROMPT = """\
 You are AmritaGO, a coding agent working inside the user's workspace. Use the
 available tools to inspect files and run commands, and keep answers short.

@@ -130,7 +130,7 @@ export function RunMeta({
     >
       {busy && (
         <Chip icon={ActivityIcon}>
-          <span className="text-foreground/80">生成中</span>
+          <span className="font-medium text-foreground">生成中</span>
         </Chip>
       )}
       {plan && (
@@ -189,15 +189,15 @@ export function RunMeta({
           >
             {Math.round(last.context_percent)}%
             {messages !== null && (
-              <span className="opacity-70">· {messages} 条</span>
+              <span>· {messages} 条</span>
             )}
           </Chip>
         )}
       {!busy && last && duration(last.duration_ms) && (
-        <span className="shrink-0 opacity-70">用时 {duration(last.duration_ms)}</span>
+        <span className="shrink-0">用时 {duration(last.duration_ms)}</span>
       )}
       {totals && totals.turns > 0 && !busy && (
-        <span className="ml-auto shrink-0 opacity-70" title="本会话累计">
+        <span className="ml-auto shrink-0" title="本会话累计">
           会话累计 {compact(totals.total_tokens)} tok · {totals.turns} 轮
           {totals.cache_hit > 0
             ? ` · 命中 ${Math.round(

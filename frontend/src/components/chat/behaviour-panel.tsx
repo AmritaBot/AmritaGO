@@ -67,7 +67,7 @@ export function BehaviourPanel({
           <h3 className="text-sm font-medium">工具预算用尽时</h3>
           <InfoHint>
             一轮 = 模型请求一次工具。预算本身由 AmritaCore 的{" "}
-            <code>agent_tool_call_limit</code> 控制（核心配置 -> 函数），
+            <code>agent_tool_call_limit</code> 控制（核心配置 → 函数），
             这里只决定「用完之后怎么办」。
           </InfoHint>
         </div>

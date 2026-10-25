@@ -22,7 +22,7 @@ from amrita_core.tools.models import (
 
 from app.core.config import PATHS
 
-#: Refuse to grow a scratch file past this; a plan is never 128 KiB.
+# Refuse to grow a scratch file past this; a plan is never 128 KiB.
 MAX_BYTES = 128 * 1024
 
 MEMORY_TOOL_NAMES: frozenset[str] = frozenset(

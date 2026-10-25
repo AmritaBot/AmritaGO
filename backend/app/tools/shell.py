@@ -27,23 +27,23 @@ from typing import Any, Literal
 from app.core.config import PATHS
 from app.core.paths_translate import bash_style_for, native_path, shell_path
 
-#: A session family, not an executable: ``unix`` covers bash and zsh.
+# A session family, not an executable: ``unix`` covers bash and zsh.
 ShellKind = Literal["pwsh", "unix"]
-#: The program inside a family; ``wsl`` is bash in the Linux namespace, with its own paths.
+# The program inside a family; ``wsl`` is bash in the Linux namespace, with its own paths.
 ShellFlavour = Literal["bash", "zsh", "pwsh", "wsl"]
 
-#: Preference order when a unix session pins none; ``wsl`` is absent on purpose.
+# Preference order when a unix session pins none; ``wsl`` is absent on purpose.
 UNIX_FLAVOURS: tuple[ShellFlavour, ...] = ("bash", "zsh")
 
-#: Every flavour a user may pick explicitly.
+# Every flavour a user may pick explicitly.
 ALL_FLAVOURS: tuple[ShellFlavour, ...] = ("bash", "zsh", "wsl", "pwsh")
 
 
-#: Default output cap handed back to the model.
+# Default output cap handed back to the model.
 DEFAULT_MAX_OUTPUT_BYTES = 192 * 1024
-#: Default wall-clock limit for one command.
+# Default wall-clock limit for one command.
 DEFAULT_TIMEOUT = 60.0
-#: Hard ceiling a caller cannot exceed.
+# Hard ceiling a caller cannot exceed.
 MAX_TIMEOUT = 600.0
 
 _MARKER_PREFIX = "]633;D;"
@@ -213,7 +213,7 @@ def _ps_quote(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
-#: Names that mean UTF-8, normalised so "UTF8" behaves like "utf-8".
+# Names that mean UTF-8, normalised so "UTF8" behaves like "utf-8".
 _UTF8_ALIASES = frozenset({"utf-8", "utf8", "utf_8", "utf-8-sig", "utf_8_sig"})
 
 
@@ -354,22 +354,22 @@ def strip_marker(
 class ShellSession:
     kind: ShellKind
     cwd: Path
-    #: ``bash`` / ``zsh`` / ``pwsh``. Defaults to whatever is installed.
+    # ``bash`` / ``zsh`` / ``pwsh``. Defaults to whatever is installed.
     flavour: str = ""
     max_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES
-    #: Configured interpreter path; empty means "whatever is on PATH".
+    # Configured interpreter path; empty means "whatever is on PATH".
     executable_path: str = ""
-    #: Snippet run before every command, e.g. ``source ~/.bashrc``.
+    # Snippet run before every command, e.g. ``source ~/.bashrc``.
     init_commands: str = ""
-    #: Codec for the process output; UTF-8 unless the shell emits the OEM page.
+    # Codec for the process output; UTF-8 unless the shell emits the OEM page.
     output_encoding: str = "utf-8"
-    #: WSL distribution name; empty means the default distro.
+    # WSL distribution name; empty means the default distro.
     wsl_distro: str = ""
     nonce: str = field(default_factory=lambda: uuid.uuid4().hex[:16])
-    #: Stable handle the UI uses to reset or inspect one session.
+    # Stable handle the UI uses to reset or inspect one session.
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     started_at: float = field(default_factory=time.time)
-    #: Recent runs, newest last; bounded because it is a transcript, not a log.
+    # Recent runs, newest last; bounded because it is a transcript, not a log.
     runs: list[dict[str, Any]] = field(default_factory=list)
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
 

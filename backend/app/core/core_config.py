@@ -19,7 +19,7 @@ from pydantic import BaseModel, ValidationError
 from app.core.config import PATHS
 from app.core.storage import read_json, write_json
 
-#: Short Chinese labels; the library's English description stays as a tooltip.
+# Short Chinese labels; the library's English description stays as a tooltip.
 FIELD_LABELS: dict[str, str] = {
     "llm.max_tokens": "输出 Token 上限",
     "llm.llm_timeout": "请求超时（秒）",
@@ -50,7 +50,7 @@ FIELD_LABELS: dict[str, str] = {
     "builtin.react_config.tool_prediction": "预测所需工具",
 }
 
-#: Replaces the library docs; "thinking" here always means the prompted flags.
+# Replaces the library docs; "thinking" here always means the prompted flags.
 FIELD_DESCRIPTIONS: dict[str, str] = {
     "builtin.tool_calling_mode": (
         "决定框架允许模型用几轮工具：agent 一轮一轮调下去，直到模型不再要工具；"
@@ -84,7 +84,7 @@ FIELD_DESCRIPTIONS: dict[str, str] = {
     "builtin.loop_reasoning_trigger": ("连续推理多少次后放弃。设得太小会让复杂任务提前收尾。"),
 }
 
-#: Fields that change agent behaviour; isolated because a wrong value can cripple a run.
+# Fields that change agent behaviour; isolated because a wrong value can cripple a run.
 UNSAFE_FIELDS: dict[str, str] = {
     "builtin.tool_calling_mode": (
         "直接决定工具循环跑几轮：选 rag / none 后模型仍然“会”工具，但框架不再执行，"
@@ -133,7 +133,7 @@ UNSAFE_FIELDS: dict[str, str] = {
     "llm.memory_length_limit": "历史消息条数上限，超出部分不进入请求，Agent 会“忘记”早期内容。",
 }
 
-#: Fields the UI may change; keys are dotted paths into ``AmritaConfig``.
+# Fields the UI may change; keys are dotted paths into ``AmritaConfig``.
 EDITABLE_FIELDS: tuple[str, ...] = (
     "llm.max_tokens",
     "llm.llm_timeout",

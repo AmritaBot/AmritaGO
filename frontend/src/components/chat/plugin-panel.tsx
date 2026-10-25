@@ -254,12 +254,12 @@ export function PluginPanel({
                   {workflow.description}
                 </span>
                 {workflow.hint && (
-                  <span className="mt-0.5 block text-[11px] text-muted-foreground/80">
+                  <span className="mt-0.5 block text-[11px] text-muted-foreground">
                     {workflow.hint}
                   </span>
                 )}
                 {pinnedBy.length > 0 && (
-                  <span className="mt-0.5 block text-[11px] text-muted-foreground/80">
+                  <span className="mt-0.5 block text-[11px] text-muted-foreground">
                     被预设固定：{pinnedBy.join("、")}
                   </span>
                 )}

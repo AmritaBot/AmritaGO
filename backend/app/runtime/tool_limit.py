@@ -21,7 +21,7 @@ from app.core.settings import load_settings
 from app.runtime.limit_gate import LIMITS
 from app.runtime.stream_hub import HUB
 
-#: What the transcript says when the user cuts a spent run off.
+# What the transcript says when the user cuts a spent run off.
 ABORT_NOTICE = (
     "已按你的选择中断本轮：工具调用预算用完，模型不再继续调用工具。需要接着做时发一条新消息即可。"
 )
@@ -52,7 +52,7 @@ def for_run(config: AmritaConfig | None = None) -> AmritaConfig:
 class LimitAwareStrategy(ReActAgentStrategy):
     """``ReActAgentStrategy`` that can ask before ending the turn."""
 
-    #: Set once this round asked; the guards call ``on_limited`` twice.
+    # Set once this round asked; the guards call ``on_limited`` twice.
     _asked: bool = False
 
     async def on_limited(self) -> None:

@@ -17,16 +17,16 @@ from typing import Any
 
 from amrita_sense.logging import logger
 
-#: How long a tool waits for an answer before giving up.
+# How long a tool waits for an answer before giving up.
 DEFAULT_TIMEOUT = 180.0
 
 
 @dataclass
 class Decision:
     approved: bool
-    #: The command to run, which the user may have edited.
+    # The command to run, which the user may have edited.
     command: str
-    #: Present when rejected; fed back to the model so it can adapt.
+    # Present when rejected; fed back to the model so it can adapt.
     reason: str = ""
     timed_out: bool = False
     edited: bool = False

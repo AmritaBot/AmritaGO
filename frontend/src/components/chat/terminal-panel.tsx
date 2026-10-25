@@ -215,7 +215,7 @@ export function TerminalPanel() {
               所以「上一条 <code>cd</code> 到哪」能延续到下一次。
             </span>
             <span>
-              想在哪个解释器里跑，去「插件 -> shell-pwsh / shell-unix -> 配置」
+              想在哪个解释器里跑，去「插件 → shell-pwsh / shell-unix → 配置」
               填可执行文件路径（例如 <code>/bin/bash</code>）和初始化脚本；
               bash 与 zsh 共用同一个 unix 插件，方言在配置里选。
             </span>

@@ -32,12 +32,12 @@ export function MockTriggersNote() {
       <dl className="flex flex-col gap-1.5">
         {TRIGGERS.map((item) => (
           <div key={item.label} className="flex flex-col gap-0.5">
-            <dt className="text-foreground/85">{item.label}</dt>
+            <dt className="text-foreground">{item.label}</dt>
             <dd className="flex flex-wrap gap-1">
               {item.keywords.map((keyword) => (
                 <code
                   key={keyword}
-                  className="rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-foreground/70"
+                  className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px] text-foreground"
                 >
                   {keyword}
                 </code>

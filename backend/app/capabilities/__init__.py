@@ -8,12 +8,13 @@ global switch. Nothing is registered into AmritaCore's global managers.
 from __future__ import annotations
 
 import fnmatch
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from amrita_core.tools.manager import MultiToolsManager
 from amrita_core.tools.mcp import MCPClient, MultiClientManager
-from amrita_core.tools.models import ToolData
+from amrita_core.tools.models import ToolContext, ToolData
 from amrita_sense.logging import logger
 
 from app.capabilities.mcp_runtime import RUNTIME as MCP
@@ -48,8 +49,49 @@ class ToolBuildContext:
     skills: tuple[SkillInfo, ...] = ()
     mcp: tuple[MCPSource, ...] = ()
     access_mode: str = "workspace"
-    #: Session the run belongs to, for sources that keep per-conversation state.
+    # Session the run belongs to, for sources that keep per-conversation state.
     session_id: str | None = None
+
+
+@dataclass
+class ToolRunContext(ToolContext):
+    """AmritaCore's tool context plus the run the tool belongs to.
+
+    The base type carries only the arguments and the strategy context, so a
+    tool could not resolve the configured workspace, reach the session stream
+    to ask for confirmation, or enforce the access mode.
+    """
+
+    settings: Any = None
+    session_id: str = ""
+    access_mode: str = "workspace"
+
+
+def _bind_run_context(
+    tool: ToolData,
+    settings: Any,
+    session_id: str | None,
+    access_mode: str,
+) -> ToolData:
+    """Attach the run's settings, session and access mode to what a tool receives."""
+    if not tool.custom_run:
+        return tool
+    inner = cast(Callable[[Any], Awaitable[str | None]], tool.func)
+
+    async def bound(raw: Any) -> str | None:
+        if not isinstance(raw, ToolContext):
+            return await inner(raw)
+        return await inner(
+            ToolRunContext(
+                data=raw.data,
+                ctx=raw.ctx,
+                settings=settings,
+                session_id=session_id or "",
+                access_mode=access_mode,
+            )
+        )
+
+    return tool.model_copy(update={"func": bound})
 
 
 @dataclass
@@ -58,7 +100,7 @@ class CapabilityCatalog:
     agent: Any = None
     skills: tuple[SkillInfo, ...] = ()
     mcp: tuple[MCPSource, ...] = ()
-    #: Effective access mode for this run (readonly / workspace / full).
+    # Effective access mode for this run (readonly / workspace / full).
     access_mode: str = "workspace"
     session_id: str | None = None
     _tools: MultiToolsManager | None = field(default=None, repr=False)
@@ -146,7 +188,9 @@ class CapabilityCatalog:
                 if tool_disabled(self.settings, name):
                     continue
                 if not manager.has_tool(name):
-                    manager.register_tool(tool)
+                    manager.register_tool(
+                        _bind_run_context(tool, self.settings, self.session_id, self.access_mode)
+                    )
 
         for source in self.allowed_mcp():
             for tool in _mcp_tools(source):
@@ -411,7 +455,7 @@ def tool_disabled(settings: Any, name: str) -> bool:
     return any(fnmatch.fnmatchcase(name, pattern) for pattern in disabled_tools(settings))
 
 
-#: Human labels for the tool sources that ship with the app.
+# Human labels for the tool sources that ship with the app.
 _SOURCE_LABELS = {
     "core": "内置",
     "skills": "技能",

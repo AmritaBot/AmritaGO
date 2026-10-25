@@ -277,7 +277,7 @@ export function AgentEditor({
             <div className="flex items-start gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
               <LockIcon className="mt-0.5 size-3.5 shrink-0" />
               <span>
-                <span className="font-medium text-foreground/80">内建模式，不可修改或删除。</span>{" "}
+                <span className="font-medium text-foreground">内建模式，不可修改或删除。</span>{" "}
                 它由程序提供，磁盘上没有对应的 Markdown 文件，所以保存和删除接口都会直接拒绝。
                 要定制，请新建一个同名预设把它覆盖掉——删掉那个文件就会恢复成这里的样子。
               </span>

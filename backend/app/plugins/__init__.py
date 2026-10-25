@@ -80,7 +80,7 @@ class PluginInfo:
     workflows: tuple[str, ...] = ()
     mcp: tuple[str, ...] = ()
     hooks: tuple[str, ...] = ()
-    #: Name of the Pydantic model the plugin declared, if any.
+    # Name of the Pydantic model the plugin declared, if any.
     config_name: str | None = None
 
     def to_public(self) -> dict[str, Any]:
@@ -106,7 +106,7 @@ class PluginSnapshot:
     hooks: Mapping[str, tuple[HookHandler, ...]] = field(
         default_factory=lambda: MappingProxyType({})
     )
-    #: plugin name -> the model its settings validate against.
+    # plugin name -> the model its settings validate against.
     configs: Mapping[str, type[BaseModel]] = field(default_factory=lambda: MappingProxyType({}))
 
     def signature(self) -> tuple[Any, ...]:
@@ -144,7 +144,7 @@ class PluginSnapshot:
 
 EMPTY_SNAPSHOT = PluginSnapshot()
 
-#: Plugins the app depends on, so the UI cannot switch them off.
+# Plugins the app depends on, so the UI cannot switch them off.
 PROTECTED_PLUGINS: frozenset[str] = frozenset({"core-tools", "files", "todos"})
 
 
@@ -358,7 +358,7 @@ class PluginRuntime:
         self._activation: _Activation | None = None
         self._lock = asyncio.Lock()
         self.debug = False
-        #: Names skipped during activation; kept apart so they stay listable.
+        # Names skipped during activation; kept apart so they stay listable.
         self.disabled: set[str] = set()
 
     @property

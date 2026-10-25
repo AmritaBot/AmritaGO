@@ -545,7 +545,7 @@ async def run_turn(
         )
 
 
-#: Operator instruction for "continue": the budget ran out, not the work.
+# Operator instruction for "continue": the budget ran out, not the work.
 CONTINUE_PROMPT = (
     "Continue the task you were working on. The previous turn ended because it "
     "reached its tool-call budget, not because the work was finished. Pick up "

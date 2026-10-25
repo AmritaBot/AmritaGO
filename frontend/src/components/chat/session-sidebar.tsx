@@ -63,13 +63,13 @@ function SessionRow({
         active
           ? "bg-sidebar-accent text-sidebar-accent-foreground"
           : "hover:bg-sidebar-accent/60",
-        archived && "opacity-70",
+        archived && "opacity-80",
       )}
     >
       {session.parent_id ? (
-        <GitBranchIcon className="size-4 shrink-0 opacity-60" />
+        <GitBranchIcon className="size-4 shrink-0 opacity-80" />
       ) : (
-        <MessageSquareIcon className="size-4 shrink-0 opacity-60" />
+        <MessageSquareIcon className="size-4 shrink-0 opacity-80" />
       )}
       <div className="min-w-0 flex-1">
         {editing ? (
@@ -179,6 +179,7 @@ export function SessionSidebar({
   onArchive,
   onBranch,
   onOpenSettings,
+  version = APP_VERSION,
 }: {
   sessions: SessionMeta[];
   archived: SessionMeta[];
@@ -190,6 +191,8 @@ export function SessionSidebar({
   onArchive: (id: string, archived: boolean) => void;
   onBranch: (session: SessionMeta) => void;
   onOpenSettings: () => void;
+  /** Backend-reported version; falls back to the bundle's own. */
+  version?: string;
 }) {
   const [showArchive, setShowArchive] = useState(false);
   //: The session waiting for a second click, plus which action it was for.
@@ -212,9 +215,9 @@ export function SessionSidebar({
           </div>
           <div
             className="truncate font-mono text-[10px] text-muted-foreground"
-            title={`版本 ${APP_VERSION}`}
+            title={`版本 ${version}`}
           >
-            v{APP_VERSION}
+            v{version}
           </div>
         </div>
         <Button variant="ghost" size="icon-sm" onClick={onCreate} aria-label="新建会话">

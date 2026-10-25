@@ -61,7 +61,7 @@ class TurnUsage(BaseModel):
     context_tokens: int | None = None
     max_context: int | None = None
     context_percent: float | None = None
-    #: Messages the *next* request will carry, not the visible transcript length.
+    # Messages the *next* request will carry, not the visible transcript length.
     context_messages: int | None = None
     rounds: int = 1
     steps: int = 0

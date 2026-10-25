@@ -110,7 +110,7 @@ export function TodoPanel({
                 {item.done ? (
                   <CheckCircle2Icon className="mt-[2px] size-3.5 shrink-0 text-emerald-500" />
                 ) : (
-                  <CircleIcon className="mt-[2px] size-3.5 shrink-0 text-muted-foreground/60" />
+                  <CircleIcon className="mt-[2px] size-3.5 shrink-0 text-muted-foreground" />
                 )}
                 <span
                   className={cn(

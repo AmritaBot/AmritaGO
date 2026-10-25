@@ -12,7 +12,7 @@ import logging
 
 from amrita_sense.logging import LoguruHandler
 
-#: Loggers reconfigured explicitly, since each sets ``propagate = False``.
+# Loggers reconfigured explicitly, since each sets ``propagate = False``.
 MANAGED_LOGGERS: tuple[str, ...] = (
     "uvicorn",
     "uvicorn.error",

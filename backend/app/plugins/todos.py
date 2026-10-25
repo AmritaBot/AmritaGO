@@ -94,7 +94,7 @@ def _renumber(items: list[TodoItem]) -> list[TodoItem]:
     ]
 
 
-#: Item shape for the array arguments, declared once to avoid drift.
+# Item shape for the array arguments, declared once to avoid drift.
 _ITEM_TEXT = FunctionPropertySchema(type="string", description="One item's text.")
 
 

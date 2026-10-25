@@ -229,7 +229,7 @@ export function CodeBlock({ code, language, streaming = false }: CodeBlockProps)
       <div className="flex items-center gap-1.5 border-b border-border/70 bg-muted/40 px-2.5 py-1">
         <span className="font-mono text-[11px] text-muted-foreground">{label}</span>
         {lines > 1 && (
-          <span className="text-[10px] text-muted-foreground/70">{lines} 行</span>
+          <span className="text-[11px] text-muted-foreground">{lines} 行</span>
         )}
         <div className="ml-auto flex items-center gap-0.5">
           <Button

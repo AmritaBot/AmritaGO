@@ -239,25 +239,25 @@ function ReasoningRow({
       open={open}
       onToggle={() => setOverride(!open)}
       label={
-        <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
-          <span className="shrink-0">思考过程</span>
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="shrink-0 font-medium">思考过程</span>
           {duration && (
             <span
-              className="shrink-0 font-mono text-[11px] text-muted-foreground/80"
+              className="shrink-0 font-mono text-[11px] text-muted-foreground"
               title="本轮花在思考上的时间（浏览器侧计时）"
             >
               {duration}
             </span>
           )}
           {!open && (
-            <span className="min-w-0 truncate text-[11px] text-muted-foreground/60">
+            <span className="min-w-0 truncate text-xs text-muted-foreground">
               {snippet(text, 80)}
             </span>
           )}
         </span>
       }
     >
-      <div className="mt-1 ml-1.5 max-h-64 overflow-y-auto rounded-md border border-border/60 bg-muted/30 px-2.5 py-2 text-xs leading-6 whitespace-pre-wrap text-muted-foreground">
+      <div className="mt-1 ml-1.5 max-h-64 overflow-y-auto rounded-md border border-border bg-muted/30 px-2.5 py-2 text-[0.8rem] leading-6 whitespace-pre-wrap text-foreground/85">
         {text}
       </div>
     </Row>
@@ -307,7 +307,7 @@ function ToolRow({ call }: { call: ToolCall }) {
           <span
             className={cn(
               "shrink-0 text-[11px]",
-              call.status === "failed" ? "text-destructive" : "text-muted-foreground/70",
+              call.status === "failed" ? "text-destructive" : "text-muted-foreground",
             )}
           >
             {state}
@@ -316,25 +316,25 @@ function ToolRow({ call }: { call: ToolCall }) {
       }
       trailing={
         call.result ? (
-          <span className="hidden max-w-56 shrink-0 truncate font-mono text-[11px] text-muted-foreground/50 sm:block">
+          <span className="hidden max-w-56 shrink-0 truncate font-mono text-[11px] text-muted-foreground sm:block">
             {snippet(call.result, 60)}
           </span>
         ) : null
       }
     >
-      <div className="mt-1 ml-1.5 flex flex-col gap-1 rounded-md border border-border/60 bg-muted/30 px-2 py-1.5">
+      <div className="mt-1 ml-1.5 flex flex-col gap-1 rounded-md border border-border bg-muted/30 px-2 py-1.5">
         <div className="flex gap-2 text-[11px] text-muted-foreground">
-          <span className="shrink-0 opacity-60">工具</span>
+          <span className="shrink-0">工具</span>
           <span className="min-w-0 break-all">{call.name}</span>
         </div>
         <div className="flex gap-2 text-[11px] text-muted-foreground">
-          <span className="shrink-0 opacity-60">tool_id</span>
+          <span className="shrink-0">tool_id</span>
           <code className="min-w-0 break-all">{call.key || "(none)"}</code>
         </div>
         {call.args && (
           <div className="flex flex-col gap-0.5 border-t border-border/60 pt-1">
-            <span className="text-[11px] text-muted-foreground/60">参数</span>
-            <pre className="max-h-40 overflow-auto rounded bg-background/70 px-2 py-1 font-mono text-[11px] leading-5 break-all whitespace-pre-wrap text-foreground/85">
+            <span className="text-[11px] text-muted-foreground">参数</span>
+            <pre className="max-h-40 overflow-auto rounded bg-background/70 px-2 py-1 font-mono text-[11px] leading-5 break-all whitespace-pre-wrap text-foreground">
               {call.args}
             </pre>
           </div>
@@ -342,8 +342,8 @@ function ToolRow({ call }: { call: ToolCall }) {
         {call.result && (
           <div className="flex flex-col gap-0.5 border-t border-border/60 pt-1">
             <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-              <span className="text-muted-foreground/60">返回</span>
-              <span className="text-muted-foreground/50">
+              <span>返回</span>
+              <span>
                 {call.result.split("\n").length} 行 · {call.result.length} 字符
               </span>
               <Button
@@ -356,7 +356,7 @@ function ToolRow({ call }: { call: ToolCall }) {
                 {copied ? "已复制" : "复制"}
               </Button>
             </div>
-            <pre className="max-h-72 overflow-auto rounded bg-background/70 px-2 py-1 font-mono text-[11px] leading-5 break-all whitespace-pre-wrap text-foreground/85">
+            <pre className="max-h-72 overflow-auto rounded bg-background/70 px-2 py-1 font-mono text-[11px] leading-5 break-all whitespace-pre-wrap text-foreground">
               {call.result}
             </pre>
           </div>
@@ -394,7 +394,7 @@ function NoticePill({
   return (
     <div className="flex items-start gap-2 text-xs text-muted-foreground">
       <InfoIcon className="mt-0.5 size-3.5 shrink-0" />
-      <span className="font-medium text-foreground/80">{label}</span>
+      <span className="font-medium text-foreground">{label}</span>
       <span className="min-w-0 flex-1 truncate" title={content}>
         {content}
       </span>
@@ -429,13 +429,13 @@ function CompactionNotice({
       ) : (
         <Loader2Icon className="mt-0.5 size-3.5 animate-spin" />
       )}
-      <span className="shrink-0 font-medium text-foreground/80">
+      <span className="shrink-0 font-medium text-foreground">
         {done ? (
           <>
             <span className="text-muted-foreground line-through decoration-muted-foreground/40">
               Compacting Conversations
             </span>{" "}
-            <span aria-hidden>-></span> Compacted Conversations
+            <span aria-hidden>→</span> Compacted Conversations
           </>
         ) : skipped ? (
           "Compacting Conversations"

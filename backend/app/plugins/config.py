@@ -31,7 +31,7 @@ class PluginConfigError(ValueError):
         super().__init__(message)
         self.message = message
         self.errors = errors or []
-        #: Set when the save lost a race; the client can retry with this hash.
+        # Set when the save lost a race; the client can retry with this hash.
         self.current_hash = current_hash
 
 
@@ -86,7 +86,7 @@ def _default(info: Any) -> Any:
     return str(value)
 
 
-#: Pydantic reports constraint failures in English; the form is Chinese.
+# Pydantic reports constraint failures in English; the form is Chinese.
 _VALIDATION_MESSAGES: dict[str, str] = {
     "greater_than_equal": "不能小于 {ge}",
     "less_than_equal": "不能大于 {le}",

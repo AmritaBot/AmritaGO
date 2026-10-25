@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from app.core.config import PATHS
 from app.core.storage import read_json, write_json
 
-#: ClientManager's class-level manager is the registry sessions clone from.
+# ClientManager's class-level manager is the registry sessions clone from.
 
 
 class MCPServer(BaseModel):

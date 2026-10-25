@@ -48,15 +48,15 @@ class AgentPreset:
     title: str
     description: str = ""
     icon: str = "bot"
-    #: Glob patterns matched against tool names. ``None`` = allow every tool.
+    # Glob patterns matched against tool names. ``None`` = allow every tool.
     tools: list[str] | None = None
-    #: Access modes this preset may use; ``None`` allows every mode.
+    # Access modes this preset may use; ``None`` allows every mode.
     access: list[str] | None = None
-    #: Registered workflow to run; ``None`` follows the global switch.
+    # Registered workflow to run; ``None`` follows the global switch.
     workflow: str | None = None
-    #: ``"session"`` mounts an app-owned scratch directory for plans and notes.
+    # ``"session"`` mounts an app-owned scratch directory for plans and notes.
     memory: str | None = None
-    #: ``None`` -> use AmritaCore's default Jinja2 template.
+    # ``None`` -> use AmritaCore's default Jinja2 template.
     template: str | None = None
     prompt: str = ""
     path: Path | None = None
@@ -303,7 +303,7 @@ BUILTIN_STANDARD = AgentPreset(
     scope="builtin",
 )
 
-#: Shipped modes. They live in code, so only a same-named file can override one.
+# Shipped modes. They live in code, so only a same-named file can override one.
 BUILTIN_PLANNER = AgentPreset(
     name="planner",
     title="计划模式",
@@ -352,7 +352,7 @@ BUILTIN_PRESETS: tuple[AgentPreset, ...] = (
     BUILTIN_CODER,
 )
 
-#: Names reserved by the built-ins, so an override can be labelled as one.
+# Names reserved by the built-ins, so an override can be labelled as one.
 BUILTIN_NAMES: frozenset[str] = frozenset(preset.name for preset in BUILTIN_PRESETS)
 
 
@@ -382,7 +382,7 @@ def to_public(preset: AgentPreset) -> dict[str, Any]:
         "workflow_mode_label": workflow.mode_label if workflow else None,
         "memory": preset.memory,
         "scope": preset.scope,
-        #: True when this file overrides a built-in mode.
+        # True when this file overrides a built-in mode.
         "shadows_builtin": preset.scope != "builtin" and preset.name in BUILTIN_NAMES,
         "path": str(preset.path) if preset.path else None,
         "has_custom_template": bool(preset.template and preset.template.strip()),

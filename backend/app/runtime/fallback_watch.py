@@ -15,7 +15,7 @@ from amrita_core.hook.event import FallbackContext
 from amrita_core.hook.on import on_preset_fallback
 from amrita_sense.logging import logger
 
-#: Errors captured for the turn that is currently running in this task.
+# Errors captured for the turn that is currently running in this task.
 _BUCKET: ContextVar[list[str] | None] = ContextVar("amrita_go_fallback_errors", default=None)
 
 

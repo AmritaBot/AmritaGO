@@ -21,12 +21,12 @@ from app.core.config import PATHS
 
 Kind = Literal["image", "text"]
 
-#: A prompt may be a plain string or a list of typed content items.
+# A prompt may be a plain string or a list of typed content items.
 UserContent = str | list[ImageContent | TextContent]
 
-#: Pastes longer than this are offloaded to a file instead of the composer.
+# Pastes longer than this are offloaded to a file instead of the composer.
 LONG_TEXT_THRESHOLD = 4000
-#: Images larger than this are rejected — a 20 MB phone photo is not a prompt.
+# Images larger than this are rejected — a 20 MB phone photo is not a prompt.
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 
 _DATA_URL = re.compile(r"^data:(image/[A-Za-z0-9.+-]+);base64,(.+)$", re.DOTALL)

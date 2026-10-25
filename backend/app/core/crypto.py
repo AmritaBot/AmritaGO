@@ -23,13 +23,13 @@ from cryptography.fernet import Fernet, InvalidToken
 
 KEY_FILE = "secret.key"
 
-#: Explicit key material (base64, 32 bytes). Intended for containers and CI.
+# Explicit key material (base64, 32 bytes). Intended for containers and CI.
 ENV_SECRET = "AMRITA_GO_SECRET"
 
-#: Truthy skips the OS keyring and always uses ``secret.key``.
+# Truthy skips the OS keyring and always uses ``secret.key``.
 ENV_NO_KEYRING = "AMRITA_GO_NO_KEYRING"
 
-#: One keyring entry per data directory, so two installs do not share a key.
+# One keyring entry per data directory, so two installs do not share a key.
 KEYRING_SERVICE = "amrita-go"
 
 

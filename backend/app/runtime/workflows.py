@@ -24,7 +24,7 @@ class WorkflowError(ValueError):
     """Raised when a workflow name cannot be resolved."""
 
 
-#: How a workflow drives the model. Only ``mode`` is user-facing.
+# How a workflow drives the model. Only ``mode`` is user-facing.
 MODE_LABELS: dict[str, str] = {
     "chat": "直接回答",
     "react": "标准 ReAct",
@@ -39,11 +39,11 @@ class WorkflowSpec:
     description: str
     strategy: type[AgentStrategy]
     source: str = "builtin"
-    #: ``chat`` | ``react`` | ``step``, shown so "ReAct" never hides the real loop.
+    # ``chat`` | ``react`` | ``step``, shown so "ReAct" never hides the real loop.
     mode: str = "react"
-    #: Pre-rendered pipeline; ``None`` means AmritaCore's default graph.
+    # Pre-rendered pipeline; ``None`` means AmritaCore's default graph.
     pipeline: Any = None
-    #: One sentence of advice; the UI shows it under the description.
+    # One sentence of advice; the UI shows it under the description.
     hint: str = ""
 
     @property

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { PromptDialog } from "@/components/ui/prompt-dialog";
 import { useTheme } from "@/hooks/use-theme";
 import { api, type AgentPreset, type ModelOption, type SessionMeta, type Workspace } from "@/lib/api";
+import { APP_VERSION, loadAppVersion } from "@/lib/version";
 import { cn } from "@/lib/utils";
 
 const THEME_LABEL = {
@@ -34,6 +35,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("providers");
   const [booting, setBooting] = useState(true);
+  const [appVersion, setAppVersion] = useState(APP_VERSION);
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [activeWorkspace, setActiveWorkspace] = useState<string | null>(null);
@@ -93,6 +95,17 @@ export default function App() {
         setBooting(false);
       }
     })();
+  }, []);
+
+  // The Python distribution owns the version; ask once per page load.
+  useEffect(() => {
+    let cancelled = false;
+    void loadAppVersion().then((version) => {
+      if (!cancelled) setAppVersion(version);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // The backend renames a session on first reply; keep the sidebar in sync.
@@ -232,6 +245,7 @@ export default function App() {
           onArchive={archiveSession}
           onBranch={branchSession}
           onOpenSettings={() => setSettingsOpen(true)}
+          version={appVersion}
         />
       </aside>
 

@@ -48,7 +48,7 @@ _COMMAND_ARG = "command"
 _TIMEOUT_ARG = "timeout"
 _CWD_ARG = "cwd"
 
-#: Approval policy: ``rules`` (allow-list), ``bypass`` (never ask), ``writes``, ``always``.
+# Approval policy: ``rules`` (allow-list), ``bypass`` (never ask), ``writes``, ``always``.
 AuditMode = Literal["rules", "bypass", "writes", "always"]
 
 
@@ -148,7 +148,7 @@ class ShellConfig(BaseModel):
         return value
 
 
-#: Same vocabulary as the read-only guard, so "what counts as a write" has one definition.
+# Same vocabulary as the read-only guard, so "what counts as a write" has one definition.
 _WRITE_HINTS = (
     "rm",
     "rmdir",

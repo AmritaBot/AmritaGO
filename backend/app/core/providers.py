@@ -40,9 +40,9 @@ class ModelEntry(BaseModel):
     multimodal: bool = False
     temperature: float = 0.7
     top_p: float = 0.8
-    #: Ask for the provider's own reasoning channel; off by default, not every model takes it.
+    # Ask for the provider's own reasoning channel; off by default, not every model takes it.
     thinking: bool = False
-    #: Optional per-1k-token prices, in ``currency``.
+    # Optional per-1k-token prices, in ``currency``.
     price_in: float | None = None
     price_out: float | None = None
     currency: str = "USD"
@@ -53,7 +53,7 @@ class Provider(BaseModel):
     name: str
     base_url: str
     protocol: str = "openai"
-    #: Provider-level defaults a model may inherit.
+    # Provider-level defaults a model may inherit.
     max_context: int | None = None
     max_output: int = 28000
     enabled: bool = True

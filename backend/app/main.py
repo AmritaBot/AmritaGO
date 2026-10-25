@@ -21,6 +21,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from app import __version__
 from app.agents import (
     BUILTIN_NAMES,
     BUILTIN_STANDARD,
@@ -117,11 +118,11 @@ class SettingsUpdate(BaseModel):
     active_workflow: str | None = None
     debug: bool | None = None
     disabled_tools: list[str] | None = None
-    #: Authoritative allow-list; omitted names are disabled (new plugins too).
+    # Authoritative allow-list; omitted names are disabled (new plugins too).
     enabled_plugins: list[str] | None = None
-    #: Legacy inverted form, translated to :attr:`enabled_plugins`.
+    # Legacy inverted form, translated to :attr:`enabled_plugins`.
     disabled_plugins: list[str] | None = None
-    #: ``graceful`` | ``ask`` — what a run does when it spends its tool budget.
+    # ``graceful`` | ``ask`` — what a run does when it spends its tool budget.
     tool_limit_policy: Literal["graceful", "ask"] | None = None
     tool_limit_extension: int | None = Field(default=None, ge=1, le=50)
     tool_limit_timeout: float | None = Field(default=None, ge=10, le=3600)
@@ -149,7 +150,7 @@ class ProviderPayload(BaseModel):
     max_context: int | None = None
     max_output: int = 28000
     enabled: bool = True
-    #: Omit to keep the stored key; empty string to clear it.
+    # Omit to keep the stored key; empty string to clear it.
     api_key: str | None = None
     models: list[ModelPayload] = Field(default_factory=list)
 
@@ -258,7 +259,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await MCP.shutdown()
 
 
-app = FastAPI(title="AmritaGO", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="AmritaGO", version=__version__, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -561,7 +562,7 @@ async def get_agents(workspace: str | None = None) -> dict[str, Any]:
     presets = await discover_agents(resolved)
     settings = await load_settings()
     catalog = await catalog_for(settings, resolve_agent(settings.active_agent, resolved))
-    #: Plugin tools plus declared MCP tools: preset rules are checked against both.
+    # Plugin tools plus declared MCP tools: preset rules are checked against both.
     pool = [item["name"] for item in catalog.tool_catalog()]
     agents: list[dict[str, Any]] = []
     for preset in presets:
@@ -588,7 +589,7 @@ async def get_agent(name: str, workspace: str | None = None) -> dict[str, Any]:
     catalog = await catalog_for(settings, preset)
     return {
         **to_public(preset),
-        #: Rules matching nothing now; saving is allowed, an MCP server may be offline.
+        # Rules matching nothing now; saving is allowed, an MCP server may be offline.
         "unknown_tools": unknown_tool_patterns(
             preset, [item["name"] for item in catalog.tool_catalog()]
         ),
@@ -694,7 +695,7 @@ async def get_workflows() -> dict[str, Any]:
     workspace = _workspace_path(settings.active_workspace)
     active_agent = resolve_agent(settings.active_agent, workspace)
     presets = await discover_agents(workspace)
-    #: workflow name -> presets that pin it, so the UI can say which ignores the switch.
+    # workflow name -> presets that pin it, so the UI can say which ignores the switch.
     pinned_by: dict[str, list[str]] = {}
     for preset in presets:
         if preset.workflow:
@@ -804,9 +805,9 @@ async def reload_plugins() -> dict[str, Any]:
 
 
 class PluginConfigPayload(BaseModel):
-    #: Dotted paths -> values, as produced by the derived form.
+    # Dotted paths -> values, as produced by the derived form.
     values: dict[str, Any] = Field(default_factory=dict)
-    #: Hash of the snapshot the client edited. ``None`` skips the check.
+    # Hash of the snapshot the client edited. ``None`` skips the check.
     hash: str | None = None
 
 
@@ -1070,7 +1071,7 @@ async def clear_session_endpoint(session_id: str) -> dict[str, Any]:
 class BranchPayload(BaseModel):
     index: int | None = None
     title: str | None = None
-    #: Branch at this bubble, keeping it. Works for a user message too.
+    # Branch at this bubble, keeping it. Works for a user message too.
     entry_id: str | None = None
 
 
@@ -1433,6 +1434,7 @@ async def stream_state(session_id: str) -> dict[str, Any]:
 async def health() -> dict[str, Any]:
     return {
         "ok": True,
+        "version": __version__,
         "data_dir": str(PATHS.data),
         "mcp_connected": MCP.connected_names(),
     }

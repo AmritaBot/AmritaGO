@@ -579,6 +579,9 @@ async function errorMessage(response: Response): Promise<string> {
 }
 
 export const api = {
+  // meta
+  health: () => request<{ ok: boolean; version: string }>("/health"),
+
   // settings
   getSettings: () => request<AppSettings>("/settings"),
   patchSettings: (patch: Partial<AppSettings>) =>

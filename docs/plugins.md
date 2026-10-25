@@ -106,6 +106,8 @@ async def plugin(ctx):
 
 工具名应清晰且唯一；参数要有明确类型和描述。对用户输入进行校验，限定文件与网络访问范围，并显式返回失败信息。工具的安全性不能仅依赖 Agent 的提示词或访问模式。
 
+`custom_run=True` 的工具收到 `ToolRunContext`：`data` 是本轮模型参数，`ctx` 是 AmritaCore 的策略上下文，`session_id` 与 `access_mode` 是本轮会话和生效的访问模式，由运行时注入。按会话保存状态、向会话流发布事件（例如人工确认）时用 `session_id`，不要自己猜。
+
 ## 其他声明接口
 
 `PluginContext` 在激活期间提供以下声明方法：

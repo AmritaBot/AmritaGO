@@ -12,7 +12,7 @@ from typing import Literal
 
 AccessMode = Literal["readonly", "workspace", "full"]
 
-#: Ordered from least to most permissive. Order matters: intersecting uses it.
+# Ordered from least to most permissive. Order matters: intersecting uses it.
 ACCESS_MODES: tuple[str, ...] = ("readonly", "workspace", "full")
 
 LABELS: dict[str, str] = {
@@ -21,7 +21,7 @@ LABELS: dict[str, str] = {
     "full": "完全权限",
 }
 
-#: Tools that cannot change anything; everything else is a writer.
+# Tools that cannot change anything; everything else is a writer.
 _READ_ONLY_TOOL_PREFIXES = (
     "read_",
     "list_",
@@ -34,13 +34,13 @@ _READ_ONLY_TOOL_PREFIXES = (
     "skill_",
 )
 
-#: Dual-use tools: harmless call, the argument decides.
+# Dual-use tools: harmless call, the argument decides.
 _READ_ONLY_TOOL_SUFFIXES = ("_status", "_info", "_read", "_list", "_search")
 
-#: Families a read-only run does not get: a name check cannot keep a shell honest.
+# Families a read-only run does not get: a name check cannot keep a shell honest.
 SHELL_TOOL_PREFIXES = ("pwsh_", "unix_", "bash_", "shell_", "powershell_")
 
-#: Vouched-for tools: progress messages, session-scoped memory and todos.
+# Vouched-for tools: progress messages, session-scoped memory and todos.
 _READ_ONLY_TOOL_NAMES = frozenset(
     {
         "processing_message",
@@ -53,7 +53,7 @@ _READ_ONLY_TOOL_NAMES = frozenset(
     }
 )
 
-#: Commands a read-only shell still refuses, matched as word sequences.
+# Commands a read-only shell still refuses, matched as word sequences.
 _WRITE_COMMANDS: tuple[tuple[str, ...], ...] = (
     ("rm",),
     ("rmdir",),
@@ -106,7 +106,7 @@ _WRITE_COMMANDS: tuple[tuple[str, ...], ...] = (
     ("invoke-expression",),
 )
 
-#: Pre-compiled because this runs on every shell call.
+# Pre-compiled because this runs on every shell call.
 _WRITE_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
     (re.compile(r"\b" + r"\s+".join(words) + r"\b", re.IGNORECASE), " ".join(words))
     for words in _WRITE_COMMANDS

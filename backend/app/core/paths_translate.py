@@ -13,7 +13,7 @@ from pathlib import Path
 
 _DRIVE = re.compile(r"^([A-Za-z]):[\\\\/]?(.*)$")
 
-#: Which Windows->POSIX mapping a bash implementation expects.
+# Which Windows->POSIX mapping a bash implementation expects.
 PosixStyle = str  # "wsl" | "msys"
 
 

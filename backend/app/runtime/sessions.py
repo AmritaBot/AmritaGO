@@ -37,10 +37,10 @@ class SessionMeta(BaseModel):
     agent: str | None = None
     message_count: int = 0
     usage: UsageTotals = Field(default_factory=UsageTotals)
-    #: Archived sessions are hidden from the sidebar but still on disk.
+    # Archived sessions are hidden from the sidebar but still on disk.
     archived: bool = False
     archived_at: float | None = None
-    #: Session this one was branched from, and the entry it started at.
+    # Session this one was branched from, and the entry it started at.
     parent_id: str | None = None
     branch_from: str | None = None
     branch_index: int | None = None
@@ -61,7 +61,7 @@ class HistoryEntry(BaseModel):
     tool_calls: int = 0
     workflow: str | None = None
     agent: str | None = None
-    #: Images pasted into the composer / long pastes stored as files.
+    # Images pasted into the composer / long pastes stored as files.
     attachments: list[dict[str, Any]] = Field(default_factory=list)
 
 

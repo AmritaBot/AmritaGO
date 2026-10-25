@@ -31,7 +31,7 @@ from app.core.config import PATHS
 
 _ARGUMENTS_PARAM = "arguments"
 
-#: Guards lazy discovery: the web server calls the sync API from worker threads.
+# Guards lazy discovery: the web server calls the sync API from worker threads.
 _context_lock = threading.Lock()
 _context: SkillContext | None = None
 _context_signature: tuple[Any, ...] | None = None

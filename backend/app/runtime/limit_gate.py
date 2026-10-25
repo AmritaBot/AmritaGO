@@ -17,13 +17,13 @@ from typing import Any, Literal
 
 from amrita_sense.logging import logger
 
-#: Browser answers: ``continue`` starts a new turn, ``graceful`` winds down, ``abort`` stops it.
+# Browser answers: ``continue`` starts a new turn, ``graceful`` winds down, ``abort`` stops it.
 Action = Literal["continue", "graceful", "abort"]
 
-#: Every action the browser may send; anything else is treated as ``graceful``.
+# Every action the browser may send; anything else is treated as ``graceful``.
 ACTIONS: tuple[str, ...] = ("continue", "graceful", "abort")
 
-#: Long enough to decide, short enough not to hold a turn open.
+# Long enough to decide, short enough not to hold a turn open.
 DEFAULT_TIMEOUT = 300.0
 
 

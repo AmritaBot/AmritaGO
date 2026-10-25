@@ -223,7 +223,7 @@ export function ToolPool({
               这里的开关只是在装配时把它们滤掉，不会改动插件本身。
             </span>
             <span>
-              <span className="text-foreground/80">灰掉的工具</span>
+              <span className="font-medium text-foreground">灰掉的工具</span>
               ：勾着也不会跑。Agent 预设写了 <code>tools:</code>{" "}
               白名单却没收它，或者当前访问模式不允许。
             </span>
