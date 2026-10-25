@@ -47,9 +47,7 @@ INTERNAL_TOOLS = {"agent_stop", "processing_message", "update_step"}
 def _pick_tool(body: dict[str, Any]) -> str | None:
     tools = body.get("tools") or []
     names = [
-        tool["function"]["name"]
-        for tool in tools
-        if isinstance(tool, dict) and "function" in tool
+        tool["function"]["name"] for tool in tools if isinstance(tool, dict) and "function" in tool
     ]
     return next((name for name in names if name not in INTERNAL_TOOLS), None)
 
@@ -114,9 +112,7 @@ async def completions(request: Request) -> Response:
     if not stream:
         if target:
             return JSONResponse(_completion(_tool_call_message(target), "tool_calls"))
-        return JSONResponse(
-            _completion({"role": "assistant", "content": REPLY}, "stop")
-        )
+        return JSONResponse(_completion({"role": "assistant", "content": REPLY}, "stop"))
 
     async def events() -> AsyncGenerator[bytes, None]:
         if target:

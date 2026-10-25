@@ -72,9 +72,7 @@ async def main() -> int:
         )
         events = await collect(ws)
         kinds = [event["type"] for event in events]
-        text = "".join(
-            event.get("text", "") for event in events if event["type"] == "delta"
-        )
+        text = "".join(event.get("text", "") for event in events if event["type"] == "delta")
         print("first turn events:", {k: kinds.count(k) for k in set(kinds)})
         print("answer length:", len(text))
         assert kinds[0] == "start", kinds[:3]
@@ -92,9 +90,7 @@ async def main() -> int:
         assert assistant.strip() == text.strip(), "history must match the stream"
 
         # Second turn: context was committed, so the provider sees more messages.
-        ctx = (
-            await client.get(f"/api/sessions/{session_id}/history")
-        ).json()
+        ctx = (await client.get(f"/api/sessions/{session_id}/history")).json()
         assert len(ctx["entries"]) == 2
 
     # Reconnect after completion must NOT replay (history already shows it).

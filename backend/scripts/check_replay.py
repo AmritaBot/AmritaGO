@@ -56,9 +56,7 @@ async def main() -> int:
             },
         )
         await client.post("/api/presets/mock/activate")
-        session_id = (
-            await client.post("/api/sessions", json={"title": "replay"})
-        ).json()["id"]
+        session_id = (await client.post("/api/sessions", json={"title": "replay"})).json()["id"]
     print("session:", session_id)
 
     # --- first connection: abandon it mid-stream --------------------------
@@ -90,9 +88,7 @@ async def main() -> int:
     async with websockets.connect(f"{WS}?session_id={session_id}") as ws:
         events, finished = await read_until_done(ws)
         kinds = [event["type"] for event in events]
-        text = "".join(
-            event.get("text", "") for event in events if event["type"] == "delta"
-        )
+        text = "".join(event.get("text", "") for event in events if event["type"] == "delta")
         print("replay events:", {k: kinds.count(k) for k in set(kinds)})
         print("replayed chars:", len(text))
         assert kinds.count("start") == 1, "exactly one start marker on replay"

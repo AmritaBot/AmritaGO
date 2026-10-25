@@ -46,11 +46,7 @@ async def main() -> int:
         print("ping/pong: ok")
 
         # No API key configured on the default preset -> error frame.
-        await ws.send(
-            json.dumps(
-                {"type": "send", "session_id": session_id, "message": "hello"}
-            )
-        )
+        await ws.send(json.dumps({"type": "send", "session_id": session_id, "message": "hello"}))
         frame = json.loads(await asyncio.wait_for(ws.recv(), 10))
         print("send frame:", frame)
         assert frame["type"] == "error", frame

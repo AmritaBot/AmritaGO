@@ -51,6 +51,7 @@ class AppSettings(BaseModel):
     legacy_presets_imported: bool = False
     """``presets/*.json`` imported once; set to ``false`` to re-run the import."""
     updated_at: float = Field(default_factory=time.time)
+    """Last write time, refreshed by ``save_settings``."""
 
 
 _DEFAULT = AppSettings()
