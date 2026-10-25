@@ -141,7 +141,7 @@ export function RunMeta({
           {plan.workflowTitle === MOCK_WORKFLOW_TITLE && <MockHint side="top" />}
           {!busy && last && (
             <Chip icon={ActivityIcon}>
-              {last.rounds} 轮{last.steps > 0 ? ` ${last.steps} 步` : ""}
+              {last.rounds} 次请求{last.steps > 0 ? ` ${last.steps} 步` : ""}
             </Chip>
           )}
         </>

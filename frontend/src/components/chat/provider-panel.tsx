@@ -47,6 +47,7 @@ const EMPTY_MODEL: ModelEntry = {
   temperature: 0.7,
   top_p: 0.8,
   thinking: false,
+  thinking_effort: null,
   price_in: null,
   price_out: null,
   currency: "USD",

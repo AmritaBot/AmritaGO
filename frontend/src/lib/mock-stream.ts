@@ -308,7 +308,7 @@ export function startMockTurn({
       240,
     );
     schedule(
-      () => onEvent({ type: "delta", text: "已经跑了几轮工具，正在收集中间结果…\n" }),
+      () => onEvent({ type: "delta", text: "已经跑了几次工具调用，正在收集中间结果…\n" }),
       300,
     );
     schedule(
@@ -426,9 +426,9 @@ function mockDone(duration: number, toolCalls: number): StreamEvent {
 /**
  * Finish the budget demo after the user answers.
  *
- * Mirrors the backend: "continue" appends rounds to *this* turn, so a line says
- * so and the transcript continues; "graceful" winds down; "abort" cuts the turn
- * off without another model round — only a line saying so.
+ * Mirrors the backend: "continue" appends LLM requests to *this* turn, so a line
+ * says so and the transcript continues; "graceful" winds down; "abort" cuts the
+ * turn off without another model request — only a line saying so.
  */
 export function finishMockLimit({
   onEvent,
@@ -453,7 +453,7 @@ export function finishMockLimit({
     type: "meta",
     content:
       action === "continue"
-        ? `用户选择继续迭代：本轮再追加 ${extension} 轮`
+        ? `用户选择继续迭代：本轮再追加 ${extension} 次 LLM 请求`
         : "按优雅收尾处理：不再调用工具",
     metadata: {
       type: "system",
@@ -462,7 +462,7 @@ export function finishMockLimit({
   });
   const text =
     action === "continue"
-      ? "好的，预算加上了，接着做。这是一段假的续跑输出，用来确认追加轮数之后本轮还能继续。"
+      ? "好的，预算加上了，接着做。这是一段假的续跑输出，用来确认追加请求数之后本轮还能继续。"
       : "好的，就到这里。下面是用已有信息整理出的结论（测试模式，内容是伪造的）。";
   onEvent({ type: "delta", text });
   onEvent(mockDone(600, 2));

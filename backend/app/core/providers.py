@@ -42,6 +42,8 @@ class ModelEntry(BaseModel):
     top_p: float = 0.8
     # Ask for the provider's own reasoning channel; off by default, not every model takes it.
     thinking: bool = False
+    # Reasoning effort sent as ``reasoning_effort``; unset keeps the core default.
+    thinking_effort: str | None = None
     # Optional per-1k-token prices, in ``currency``.
     price_in: float | None = None
     price_out: float | None = None
@@ -250,6 +252,26 @@ class ProviderStore:
                 return await self.save(provider)
         raise ProviderError(f"model '{entry.id}' is not part of this provider")
 
+    async def patch_model(self, provider_id: str, model_id: str, patch: dict[str, Any]) -> Provider:
+        """Change a few fields, leaving everything else as stored.
+
+        The quick switcher edits one knob at a time and never sees the whole
+        entry, so a full replace would let a stale form blank other fields.
+        """
+        provider = await self.get(provider_id)
+        if provider is None:
+            raise ProviderError("provider not found")
+        entry = provider.model_entry(model_id)
+        if entry is None:
+            raise ProviderError(f"model '{model_id}' is not part of this provider")
+        known = set(ModelEntry.model_fields)
+        unknown = set(patch) - known
+        if unknown:
+            raise ProviderError(f"未知字段：{', '.join(sorted(unknown))}")
+        merged = ModelEntry.model_validate({**entry.model_dump(), **patch})
+        provider.models = [merged if item.id == model_id else item for item in provider.models]
+        return await self.save(provider)
+
     async def remove_model(self, provider_id: str, model_id: str) -> Provider:
         provider = await self.get(provider_id)
         if provider is None:
@@ -300,6 +322,24 @@ def new_provider_id(name: str) -> str:
     return f"{slug}-{uuid.uuid4().hex[:6]}"
 
 
+def _thinking_config(entry: ModelEntry) -> dict[str, Any] | None:
+    """Reasoning knobs for this model, or ``None`` to send none.
+
+    ``thinking`` asks for the provider's own reasoning channel; ``thinking_effort``
+    is the ``reasoning_effort`` level. Either alone is meaningful, so the block
+    exists when either is set — and when only the flag is set the effort key is
+    omitted, leaving AmritaCore's default in charge.
+    """
+    if not entry.thinking and not entry.thinking_effort:
+        return None
+    config: dict[str, Any] = {"content_mode": "optional"}
+    if entry.thinking:
+        config["thinking_type"] = "enabled"
+    if entry.thinking_effort:
+        config["thinking_effort"] = entry.thinking_effort
+    return config
+
+
 def build_preset(provider: Provider, entry: ModelEntry, credentials: Credentials) -> ModelPreset:
     """Assemble a run-time preset. Never persisted."""
     rate: RateConfig | None = None
@@ -328,9 +368,7 @@ def build_preset(provider: Provider, entry: ModelEntry, credentials: Credentials
                 "top_p": entry.top_p,
                 "multimodal": entry.multimodal,
             },
-            "thinking_config": (
-                {"thinking_type": "enabled", "content_mode": "optional"} if entry.thinking else None
-            ),
+            "thinking_config": _thinking_config(entry),
             "extra": dict(credentials.extra_headers),
         }
     )
@@ -373,6 +411,7 @@ async def list_models() -> list[dict[str, Any]]:
             "model": entry.id,
             "label": entry.label or entry.id,
             "multimodal": entry.multimodal,
+            "thinking_effort": entry.thinking_effort,
             "max_context": entry.max_context or provider.max_context,
             "has_api_key": provider.has_api_key,
         }

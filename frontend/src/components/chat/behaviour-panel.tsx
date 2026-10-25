@@ -1,14 +1,16 @@
 /**
  * Behaviour tab: what a run does when it is about to stop on its own.
  *
- * The two policies are genuinely different, and the UI has to say so:
+ * One user message is a **轮**; every tool-calling turn the model takes inside
+ * it is an **LLM 请求**. The budget counts requests, and the two policies are
+ * genuinely different, so the UI has to say so:
  *
  * - **优雅停机** ends the turn. The only number involved is how many *refusal*
- *   rounds the model gets afterwards — rounds where its tool requests are
+ *   requests the model gets afterwards — requests where its tool calls are
  *   answered with a refusal so it can close with what it already knows, instead
  *   of being cut off mid-sentence.
  * - **挂起并询问** also stops at the budget, but first asks the user. Answering
- *   "继续迭代" appends `tool_limit_extension` rounds to **this** turn, so the
+ *   "继续迭代" appends `tool_limit_extension` requests to **this** turn, so the
  *   agent keeps going with its context intact; the wind-down number still
  *   applies if the user picks 优雅收尾 instead.
  *
@@ -39,7 +41,7 @@ export function BehaviourPanel({
   onSaved: (settings: AppSettings) => void;
 }) {
   const [extension, setExtension] = useState(text(settings.tool_limit_extension, 5));
-  const [refusalRounds, setRefusalRounds] = useState(
+  const [refusalRequests, setRefusalRequests] = useState(
     text(settings.tool_limit_refusal_rounds, 5),
   );
   const [timeout, setTimeoutValue] = useState(text(settings.tool_limit_timeout, 300));
@@ -51,7 +53,7 @@ export function BehaviourPanel({
       const saved = await api.patchSettings(patch);
       onSaved(saved);
       setExtension(text(saved.tool_limit_extension, 5));
-      setRefusalRounds(text(saved.tool_limit_refusal_rounds, 5));
+      setRefusalRequests(text(saved.tool_limit_refusal_rounds, 5));
       setTimeoutValue(text(saved.tool_limit_timeout, 300));
       toast.success("已保存");
     } catch (error) {
@@ -69,8 +71,9 @@ export function BehaviourPanel({
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-medium">工具预算用尽时</h3>
           <InfoHint>
-            一轮 = 模型请求一次工具。预算本身由 AmritaCore 的{" "}
-            <code>agent_tool_call_limit</code> 控制（核心配置 → 函数），
+            你和 Agent 的一问一答算<strong>一轮</strong>；一轮里模型每发一次工具请求算
+            <strong>一次 LLM 请求</strong>。预算由 AmritaCore 的{" "}
+            <code>agent_tool_call_limit</code> 控制（核心配置 → 函数），按 LLM 请求次数计算，
             这里只决定「用完之后怎么办」。
           </InfoHint>
         </div>
@@ -81,13 +84,13 @@ export function BehaviourPanel({
                 value: "graceful",
                 title: "优雅停机",
                 detail:
-                  "本轮结束，模型用已有信息收尾回答。不打断、不等待，适合无人值守；收尾能跑几轮在下面设置。",
+                  "本轮结束，模型用已有信息收尾回答。不打断、不等待，适合无人值守；收尾还能发几次请求在下面设置。",
               },
               {
                 value: "ask",
                 title: "挂起并询问",
                 detail:
-                  "先停住，问你要怎么办：继续迭代（在本轮内追加轮数，上下文不丢）、优雅收尾（不再调工具，用它已有的信息写完）或直接中断。不选或超时按优雅收尾处理。",
+                  "先停住，问你要怎么办：继续迭代（在本轮内追加 LLM 请求次数，上下文不丢）、优雅收尾（不再调工具，用它已有的信息写完）或直接中断。不选或超时按优雅收尾处理。",
               },
             ] as const
           ).map((option) => (
@@ -118,18 +121,18 @@ export function BehaviourPanel({
 
       <section className="flex flex-col gap-3 rounded-lg border border-border p-3">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-sm font-medium">轮数</h3>
-          <InfoHint label="轮数说明">
-            两个数字管的是不同的东西：<strong>追加轮数</strong>是每次回答「继续迭代」
-            时往<strong>本轮</strong>里加的预算，加完模型接着做，上下文一条不丢；
-            <strong>收尾轮数</strong>是模型收尾时还能请求几轮工具 —— 这几轮里每个请求
+          <h3 className="text-sm font-medium">请求数</h3>
+          <InfoHint label="请求数说明">
+            两个数字管的是不同的东西：<strong>追加请求数</strong>是每次回答「继续迭代」
+            时往<strong>本轮</strong>里加的 LLM 请求次数，加完模型接着做，上下文一条不丢；
+            <strong>收尾请求数</strong>是模型收尾时还能发几次工具请求 —— 这几次里每个请求
             都会被拒绝并把原因返回给模型，让它把已有结论说完，而不是被硬生生截断。
           </InfoHint>
         </div>
 
         <div className="flex flex-wrap items-end gap-4">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="limit-extension">追加轮数</Label>
+            <Label htmlFor="limit-extension">追加请求数</Label>
             <Input
               id="limit-extension"
               type="number"
@@ -142,15 +145,15 @@ export function BehaviourPanel({
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="limit-refusal">收尾轮数</Label>
+            <Label htmlFor="limit-refusal">收尾请求数</Label>
             <Input
               id="limit-refusal"
               type="number"
               min={1}
               max={50}
-              value={refusalRounds}
+              value={refusalRequests}
               disabled={saving}
-              onChange={(event) => setRefusalRounds(event.target.value)}
+              onChange={(event) => setRefusalRequests(event.target.value)}
               className="w-28"
             />
           </div>
@@ -176,12 +179,12 @@ export function BehaviourPanel({
                 ask
                   ? {
                       tool_limit_extension: Number(extension),
-                      tool_limit_refusal_rounds: Number(refusalRounds),
+                      tool_limit_refusal_rounds: Number(refusalRequests),
                       tool_limit_timeout: Number(timeout),
                     }
                   : {
                       tool_limit_extension: Number(extension),
-                      tool_limit_refusal_rounds: Number(refusalRounds),
+                      tool_limit_refusal_rounds: Number(refusalRequests),
                     },
               )
             }
@@ -191,14 +194,14 @@ export function BehaviourPanel({
         </div>
 
         <p className="text-xs text-muted-foreground">
-          收尾轮数对应 AmritaCore 的 <code>agent_tool_refusal_rounds</code>，
+          收尾请求数对应 AmritaCore 的 <code>agent_tool_refusal_rounds</code>，
           这里设置的值会在每次运行时覆盖核心配置。
           {ask && " 等待上限只用于「挂起并询问」。"}
         </p>
       </section>
 
       <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground">
-        「继续迭代」在本轮内追加轮数：预算上限变成「已用轮数 + 追加轮数」，
+        「继续迭代」在本轮内追加 LLM 请求：预算上限变成「已用请求数 + 追加请求数」，
         模型直接从当前上下文继续，不新开会话、不重放历史。
         能继续多少次由你决定——服务端不会替你划一个上限。
       </p>

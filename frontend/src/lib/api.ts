@@ -115,6 +115,8 @@ export interface ModelEntry {
   temperature: number;
   top_p: number;
   thinking: boolean;
+  /** `reasoning_effort` sent with each request; `null` keeps the default. */
+  thinking_effort: string | null;
   price_in: number | null;
   price_out: number | null;
   currency: string;
@@ -155,6 +157,8 @@ export interface ModelOption {
   multimodal: boolean;
   max_context: number | null;
   has_api_key: boolean;
+  /** `reasoning_effort` this model sends; `null` keeps the default. */
+  thinking_effort: string | null;
 }
 
 export interface ProbeResult {
@@ -629,6 +633,16 @@ export const api = {
     request<Provider>(
       `/providers/${encodeURIComponent(id)}/models/${encodeURIComponent(modelId)}`,
       { method: "DELETE" },
+    ),
+  /** Change one knob on a model without resending the whole entry. */
+  patchModel: (
+    providerId: string,
+    modelId: string,
+    patch: { thinking_effort?: string | null; thinking?: boolean },
+  ) =>
+    request<Provider>(
+      `/providers/${encodeURIComponent(providerId)}/models/${encodeURIComponent(modelId)}`,
+      { method: "PATCH", body: JSON.stringify(patch) },
     ),
   probeProvider: (base_url: string, api_key: string, protocol: string) =>
     request<ProbeResult>("/providers/probe", {

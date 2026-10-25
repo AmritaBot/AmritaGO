@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app import __version__
 from app.agents import (
@@ -143,6 +143,7 @@ class ModelPayload(BaseModel):
     temperature: float = 0.7
     top_p: float = 0.8
     thinking: bool = True
+    thinking_effort: str | None = None
     price_in: float | None = None
     price_out: float | None = None
     currency: str = "USD"
@@ -163,6 +164,20 @@ class ProviderPayload(BaseModel):
 
 class ProviderModelPayload(BaseModel):
     model: ModelPayload
+
+
+class ModelPatch(BaseModel):
+    """A few knobs changed from the model switcher.
+
+    Only the fields present in the request are applied, so the switcher never
+    has to send a whole entry back. ``thinking_effort: ""`` clears it, which is
+    how the switcher returns to the default.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    thinking_effort: str | None = None
+    thinking: bool | None = None
 
 
 class ProbePayload(BaseModel):
@@ -440,6 +455,29 @@ async def update_provider_model(provider_id: str, payload: ProviderModelPayload)
         provider = await PROVIDERS.update_model(
             provider_id, ModelEntry.model_validate(payload.model.model_dump())
         )
+    except ProviderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    return provider.to_public()
+
+
+@app.patch(f"{API}/providers/{{provider_id}}/models/{{model_id}}")
+async def patch_provider_model(
+    provider_id: str, model_id: str, patch: ModelPatch
+) -> dict[str, Any]:
+    """Change one model's knobs without resending the whole entry.
+
+    Used by the model switcher, which only knows the field it is editing.
+    """
+    fields = patch.model_dump(exclude_unset=True)
+    if "thinking_effort" in fields:
+        effort = (fields["thinking_effort"] or "").strip()
+        if effort and (len(effort) > 32 or not effort.replace("-", "").replace("_", "").isalnum()):
+            raise HTTPException(status_code=400, detail="thinking_effort 不合法")
+        fields["thinking_effort"] = effort or None
+    if not fields:
+        raise HTTPException(status_code=400, detail="没有要修改的字段")
+    try:
+        provider = await PROVIDERS.patch_model(provider_id, model_id, fields)
     except ProviderError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
     return provider.to_public()

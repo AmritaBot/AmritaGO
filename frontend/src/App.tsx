@@ -349,6 +349,9 @@ export default function App() {
               await api.activateModel(key);
               setActiveModel(key);
             }}
+            onModelsChanged={() => {
+              void refreshContext();
+            }}
             onClearSession={async () => {
               await api.clearSession(activeId);
             }}

@@ -45,9 +45,9 @@ class AppSettings(BaseModel):
     tool_limit_policy: Literal["graceful", "ask"] = "graceful"
     """Budget policy: ``graceful`` winds down, ``ask`` parks and offers extend / graceful / abort."""
     tool_limit_extension: int = Field(default=5, ge=1, le=100)
-    """Rounds appended to the same turn each time the user answers "继续迭代"."""
+    """LLM requests appended to the same turn on each "继续迭代" answer."""
     tool_limit_refusal_rounds: int = Field(default=5, ge=1, le=50)
-    """Wind-down rounds after the budget is spent, applied to ``agent_tool_refusal_rounds``."""
+    """Wind-down LLM requests after the budget is spent, applied to ``agent_tool_refusal_rounds``."""
     tool_limit_timeout: float = Field(default=300.0, ge=10, le=3600)
     """How long the parked run waits for an answer before winding down."""
     legacy_presets_imported: bool = False

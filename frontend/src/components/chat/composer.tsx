@@ -113,6 +113,24 @@ const COMMAND_ICONS = {
   file: PlusIcon,
 };
 
+/**
+ * ``reasoning_effort`` levels the model switcher offers.
+ *
+ * The value goes to the provider verbatim and providers accept different
+ * subsets, so this is a shortlist rather than a contract. ``""`` means "keep
+ * the core default" — for a model with 思考 enabled that is ``high``, for the
+ * rest no ``reasoning_effort`` is sent at all.
+ */
+const THINKING_EFFORTS = [
+  { value: "", label: "默认（思考模型为 high）" },
+  { value: "minimal", label: "minimal · 最少" },
+  { value: "low", label: "low · 低" },
+  { value: "medium", label: "medium · 中" },
+  { value: "high", label: "high · 高" },
+  { value: "xhigh", label: "xhigh · 更高" },
+  { value: "max", label: "max · 最大" },
+];
+
 export function Composer({
   busy,
   workspaces,
@@ -134,6 +152,7 @@ export function Composer({
   onSelectAgent,
   onSelectModel,
   onSelectPermission,
+  onConfigureModel,
   onCommand,
 }: {
   busy: boolean;
@@ -157,6 +176,11 @@ export function Composer({
   onSelectAgent: (name: string) => void;
   onSelectModel: (name: string) => void;
   onSelectPermission: (value: Permission) => void;
+  /** Change one model attribute from the switcher (e.g. ``thinking_effort``). */
+  onConfigureModel: (
+    key: string,
+    patch: { thinking_effort: string | null },
+  ) => void;
   onCommand: (name: string) => void;
 }) {
   const [draft, setDraft] = useState("");
@@ -569,6 +593,36 @@ export function Composer({
                   subtitle={model.provider}
                 />
               ))}
+              {activeEntry && (
+                <div className="mt-1 border-t border-border px-2.5 pt-2 pb-1.5">
+                  <label
+                    htmlFor="model-thinking-effort"
+                    className="text-[11px] text-muted-foreground"
+                  >
+                    思考强度（thinking_effort）
+                  </label>
+                  <select
+                    id="model-thinking-effort"
+                    value={activeEntry.thinking_effort ?? ""}
+                    onChange={(event) =>
+                      onConfigureModel(activeEntry.key, {
+                        thinking_effort: event.target.value || null,
+                      })
+                    }
+                    className="mt-1 w-full rounded-md border border-input bg-popover px-2 py-1 text-xs text-popover-foreground"
+                  >
+                    {THINKING_EFFORTS.map((item) => (
+                      <option key={item.value} value={item.value}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-[10px] leading-4 text-muted-foreground">
+                    作为 <code>reasoning_effort</code> 发给模型，只对这个模型生效；
+                    服务商不支持时会忽略该参数。
+                  </p>
+                </div>
+              )}
             </Popover>
 
             <Button

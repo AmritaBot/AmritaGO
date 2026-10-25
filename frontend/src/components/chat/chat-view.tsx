@@ -341,7 +341,7 @@ function MessageBubble({
                 {message.usage.tokens_per_second
                   ? ` · ${message.usage.tokens_per_second} tok/s`
                   : ""}
-                {message.usage.rounds > 1 ? ` · ${message.usage.rounds} 轮` : ""}
+                {message.usage.rounds > 1 ? ` · ${message.usage.rounds} 次请求` : ""}
                 {message.usage.tool_calls > 0
                   ? ` · ${message.usage.tool_calls} 工具`
                   : ""}
@@ -377,11 +377,11 @@ function MessageBubble({
  * behind it is exactly what the user needs to read before deciding.
  *
  * Three answers, because "stop" is not one thing. Winding down still costs a
- * model round and produces a rushed answer; cutting the turn off costs nothing
+ * model request and produces a rushed answer; cutting the turn off costs nothing
  * and says so. Choosing one of those for the user was the old behaviour, and it
  * was wrong in both directions.
  *
- * "继续迭代" appends rounds to *this* turn, so the copy says how many and
+ * "继续迭代" appends LLM requests to *this* turn, so the copy says how many and
  * promises the agent keeps working with its context intact.
  */
 function ToolLimitCard({
@@ -407,10 +407,10 @@ function ToolLimitCard({
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">继续迭代？</p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              本轮的工具调用预算（{budget} 轮）已经用完，Agent 停在这里等你决定。
-              继续会在<strong>本轮</strong>内追加 {extension} 轮，模型带着现有上下文接着做；
+              本轮的 LLM 请求预算（{budget} 次）已经用完，Agent 停在这里等你决定。
+              继续会在<strong>本轮</strong>内追加 {extension} 次 LLM 请求，模型带着现有上下文接着做；
               优雅收尾让模型把已经查到的东西写完；直接中断则立刻停在这里，
-              不再让模型多说一轮。
+              不再让模型多发一次请求。
               {timeout > 0 &&
                 ` ${Math.round(timeout)} 秒内不选，按优雅收尾处理。`}
             </p>
@@ -418,9 +418,9 @@ function ToolLimitCard({
               <Button
                 size="sm"
                 onClick={onContinue}
-                title={`本轮再追加 ${extension} 轮工具调用，上下文不丢`}
+                title={`本轮再追加 ${extension} 次 LLM 请求，上下文不丢`}
               >
-                继续迭代（本轮 +{extension} 轮）
+                继续迭代（本轮 +{extension} 次请求）
               </Button>
               <Button
                 size="sm"
@@ -460,6 +460,7 @@ export function ChatView({
   onAddWorkspace,
   onSelectAgent,
   onSelectModel,
+  onModelsChanged,
   onClearSession,
   onOpenSettings,
   onBranch,
@@ -476,6 +477,8 @@ export function ChatView({
   onAddWorkspace: () => void;
   onSelectAgent: (name: string) => void;
   onSelectModel: (name: string) => void;
+  /** Re-read the provider list after a model attribute was changed. */
+  onModelsChanged: () => void;
   onClearSession: () => void;
   onOpenSettings: (tab?: SettingsTab) => void;
   /** Fork the session at a history entry, keeping that message. */
@@ -517,6 +520,31 @@ export function ChatView({
   }, [agents, activeAgent]);
 
   const effectivePermission = narrowPermission(allowedPermissions, permission);
+
+  /**
+   * Save one attribute of the active model from the switcher.
+   *
+   * Only the changed field is sent, so a stale form elsewhere cannot blank the
+   * rest of the entry; the provider list is re-read so the chip stays truthful.
+   */
+  const configureModel = async (
+    key: string,
+    patch: { thinking_effort: string | null },
+  ) => {
+    const model = models.find((item) => item.key === key);
+    if (!model) return;
+    try {
+      await api.patchModel(model.provider_id, model.model, patch);
+      toast.success(
+        patch.thinking_effort
+          ? `已把 ${model.model} 的思考强度设为 ${patch.thinking_effort}`
+          : `已恢复 ${model.model} 的默认思考强度`,
+      );
+      onModelsChanged();
+    } catch (error) {
+      toast.error(String(error).replace(/^Error:\s*/, ""));
+    }
+  };
 
   /**
    * ``/compact``: fold older history now.
@@ -759,6 +787,9 @@ export function ChatView({
           onSelectAgent={onSelectAgent}
           onSelectModel={onSelectModel}
           onSelectPermission={setPermission}
+          onConfigureModel={(key, patch) => {
+            void configureModel(key, patch);
+          }}
           onCommand={(name) => {
             if (name === "clear") onClearSession();
             if (name === "compact") void compactNow();
