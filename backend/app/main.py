@@ -13,8 +13,6 @@ from pathlib import Path
 from typing import Any, Literal
 
 from amrita_core import minimal_init
-from amrita_core.components.compaction import ContextCompactor, split_history
-from amrita_core.config import get_config
 from amrita_core.types import ModelPreset
 from amrita_sense.logging import logger
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -83,6 +81,7 @@ from app.plugins.todos import load_sync as load_todos
 from app.runtime.agent_runtime import run_turn
 from app.runtime.attachments import AttachmentError, save_image, save_text
 from app.runtime.audit import BROKER
+from app.runtime.commands import COMMANDS, CommandError, fold_session
 from app.runtime.limit_gate import LIMITS
 from app.runtime.sessions import (
     archive_session,
@@ -96,7 +95,6 @@ from app.runtime.sessions import (
     load_context,
     load_history,
     load_usage,
-    save_context,
     save_meta,
 )
 from app.runtime.stream_hub import HUB, StreamChannel
@@ -343,6 +341,17 @@ async def patch_settings(update: SettingsUpdate) -> dict[str, Any]:
 @app.post(f"{API}/settings")
 async def post_settings(update: SettingsUpdate) -> dict[str, Any]:
     return await patch_settings(update)
+
+
+@app.get(f"{API}/commands")
+async def get_commands() -> dict[str, Any]:
+    """Slash commands the runtime will intercept.
+
+    Built-ins plus whatever the active plugins declared — the composer's
+    palette is built from this, so a plugin's command appears without a
+    front-end change and disappears when the plugin is switched off.
+    """
+    return {"commands": [spec.to_public() for spec in COMMANDS.list()]}
 
 
 @app.get(f"{API}/presets")
@@ -1119,57 +1128,31 @@ async def clear_session_endpoint(session_id: str) -> dict[str, Any]:
 async def compact_session_endpoint(session_id: str) -> dict[str, Any]:
     """Fold older history into the summary on demand (``/compact``).
 
-    Same :class:`ContextCompactor` the workflow builds, with the same config and
-    preset, so a manual fold and an automatic one leave the same history behind.
-    Between turns only: a live run holds its own context copy, so folding the
-    file underneath it would be undone when that run saves.
+    The same :func:`fold_session` the chat command runs, so a fold from here and
+    one from the transcript leave identical history. Between turns only: a live
+    run holds its own context copy, so folding the file underneath it would be
+    undone when that run saves.
     """
     if await get_meta(session_id) is None:
         raise HTTPException(status_code=404, detail="session not found")
-    settings = await load_settings()
-    preset = await resolve_preset(settings.active_model)
-    if preset is None:
-        raise HTTPException(status_code=409, detail="还没有可用的模型，先在设置里选一个")
     if HUB.busy(session_id):
         raise HTTPException(status_code=409, detail="这一轮还在跑，等它结束再压缩")
 
-    memory = await load_context(session_id)
-    prefix, tail = split_history(memory.messages)
-    if not prefix:
-        return {
-            "compacted": False,
-            "folded": 0,
-            "kept": len(tail),
-            "summary_chars": len(memory.abstract or ""),
-            "messages": len(memory.messages),
-            "detail": "没有可折叠的历史：至少需要一条更早的消息",
-        }
-
-    compactor = ContextCompactor(config=get_config(), preset=preset)
+    settings = await load_settings()
     try:
-        folded = await compactor.compact(memory)
-    except Exception as exc:  # a provider error must not look like a broken app
-        raise HTTPException(
-            status_code=502, detail=f"压缩失败：{type(exc).__name__}: {exc}"
-        ) from exc
-    if not folded:
-        return {
-            "compacted": False,
-            "folded": len(prefix),
-            "kept": len(tail),
-            "summary_chars": len(memory.abstract or ""),
-            "messages": len(memory.messages),
-            "detail": "模型没有产出摘要，历史保持原样",
-        }
-
-    await save_context(session_id, memory)
+        outcome = await fold_session(session_id, settings)
+    except CommandError as exc:
+        # 409 for "no model configured", 502 for a provider failure: the message
+        # already says which, and the UI shows it verbatim.
+        status = 502 if str(exc).startswith("压缩失败") else 409
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
     return {
-        "compacted": True,
-        "folded": len(prefix),
-        "kept": len(tail),
-        "summary_chars": len(memory.abstract or ""),
-        "messages": len(memory.messages),
-        "detail": "",
+        "compacted": outcome.compacted,
+        "folded": outcome.folded,
+        "kept": outcome.kept,
+        "summary_chars": outcome.summary_chars,
+        "messages": outcome.messages,
+        "detail": outcome.detail,
     }
 
 
@@ -1431,31 +1414,38 @@ async def chat_socket(websocket: WebSocket) -> None:
                 continue
 
             settings = await load_settings()
-            model_key = payload.get("model") or settings.active_model
-            resolved = await resolve_preset(model_key)
-            if resolved is None:
-                await websocket.send_text(
-                    _frame(
-                        {
-                            "type": "error",
-                            "message": (
-                                "没有可用的模型。请在设置 -> 模型里添加 Provider "
-                                "和至少一个模型，并选中它。"
-                            ),
-                        }
+            # A registered slash command is answered by the runtime itself: no
+            # preset, no key, no tools. Checking the model first would make
+            # ``/help`` unreachable exactly when it is most useful.
+            resolved: ModelPreset | None = None
+            if COMMANDS.match(message) is None:
+                model_key = payload.get("model") or settings.active_model
+                resolved = await resolve_preset(model_key)
+                if resolved is None:
+                    await websocket.send_text(
+                        _frame(
+                            {
+                                "type": "error",
+                                "message": (
+                                    "没有可用的模型。请在设置 -> 模型里添加 Provider "
+                                    "和至少一个模型，并选中它。"
+                                ),
+                            }
+                        )
                     )
-                )
-                continue
-            if not resolved.api_key:
-                await websocket.send_text(
-                    _frame(
-                        {
-                            "type": "error",
-                            "message": (f"{resolved.name} 没有 API Key。请到设置 -> 模型里补上。"),
-                        }
+                    continue
+                if not resolved.api_key:
+                    await websocket.send_text(
+                        _frame(
+                            {
+                                "type": "error",
+                                "message": (
+                                    f"{resolved.name} 没有 API Key。请到设置 -> 模型里补上。"
+                                ),
+                            }
+                        )
                     )
-                )
-                continue
+                    continue
 
             # Bound to a name so the closure captures a non-optional value.
             model = resolved
@@ -1471,7 +1461,7 @@ async def chat_socket(websocket: WebSocket) -> None:
                 sid: str,
                 text: str,
                 cfg: AppSettings,
-                model_preset: ModelPreset,
+                model_preset: ModelPreset | None,
                 agent_preset: AgentPreset,
                 files: list[dict[str, Any]],
             ) -> None:

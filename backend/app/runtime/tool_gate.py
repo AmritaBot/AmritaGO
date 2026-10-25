@@ -37,7 +37,7 @@ class RunningTool:
     tool_id: str
     tool: str
     started_at: float
-    #: Resolved with the user's reason when the call is cancelled.
+    # Resolved with the user's reason when the call is cancelled.
     future: asyncio.Future[str]
 
     def public(self) -> dict[str, Any]:

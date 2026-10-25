@@ -15,8 +15,16 @@ import { InfoHint } from "@/components/ui/info-hint";
  */
 const TRIGGERS: { label: string; keywords: string[] }[] = [
   { label: "待办面板", keywords: ["计划", "待办", "todo", "plan"] },
-  { label: "审批弹窗（可驳回）", keywords: ["审批", "确认", "audit", "confirm"] },
-  { label: "预算询问（继续 / 收尾 / 中断）", keywords: ["预算", "继续迭代", "budget"] },
+  {
+    label: "审批弹窗（可驳回）",
+    keywords: ["审批", "确认", "audit", "confirm"],
+  },
+  {
+    label: "预算询问（继续 / 收尾 / 中断）",
+    keywords: ["预算", "继续迭代", "budget"],
+  },
+  { label: "手动取消工具（填原因）", keywords: ["取消", "中止", "cancel"] },
+  { label: "工具超时", keywords: ["超时", "timeout"] },
   { label: "上下文压缩提示", keywords: ["压缩", "compact", "摘要"] },
   { label: "代码块与表格", keywords: ["代码", "code", "表格", "table"] },
   { label: "图表（mermaid）", keywords: ["图", "mermaid", "flow"] },

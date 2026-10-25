@@ -33,7 +33,6 @@ import {
   ShieldAlertIcon,
   SquareIcon,
   TerminalIcon,
-  Trash2Icon,
   XIcon,
 } from "lucide-react";
 
@@ -87,7 +86,9 @@ export interface CommandOption {
   name: string;
   title: string;
   description: string;
-  icon?: "compact" | "clear" | "permission" | "model" | "export" | "feedback" | "file";
+  icon?: "compact" | "permission" | "model" | "export" | "feedback" | "file";
+  /** `builtin` or the plugin that registered it; only used as a hint in the palette. */
+  source?: string;
 }
 
 const PERMISSIONS: Record<
@@ -105,7 +106,6 @@ const PERMISSIONS: Record<
 
 const COMMAND_ICONS = {
   compact: ArchiveIcon,
-  clear: Trash2Icon,
   permission: ShieldIcon,
   model: TerminalIcon,
   export: ArrowUpIcon,
@@ -154,6 +154,7 @@ export function Composer({
   onSelectPermission,
   onConfigureModel,
   onCommand,
+  commands: serverCommands,
 }: {
   busy: boolean;
   workspaces: WorkspaceOption[];
@@ -182,17 +183,19 @@ export function Composer({
     patch: { thinking_effort: string | null },
   ) => void;
   onCommand: (name: string) => void;
+  /** Commands the backend will intercept (``/compact``, plugin commands, …). */
+  commands?: CommandOption[];
 }) {
   const [draft, setDraft] = useState("");
-  const [open, setOpen] = useState<"workspace" | "agent" | "permission" | "model" | null>(
-    null,
-  );
+  const [open, setOpen] = useState<
+    "workspace" | "agent" | "permission" | "model" | null
+  >(null);
   const [commandIndex, setCommandIndex] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const commands: CommandOption[] = useMemo(
+  const clientCommands: CommandOption[] = useMemo(
     () => [
       {
         name: "permission",
@@ -212,20 +215,15 @@ export function Composer({
         description: "切换 Agent 预设",
         icon: "permission",
       },
-      {
-        name: "compact",
-        title: "压缩上下文",
-        description: "把较早的消息折叠成摘要，腾出上下文空间",
-        icon: "compact",
-      },
-      {
-        name: "clear",
-        title: "清空",
-        description: "清空当前会话",
-        icon: "clear",
-      },
     ],
     [],
+  );
+
+  // Client commands open a popover; anything else is sent as a message and
+  // answered by the backend, so a plugin's command needs no front-end change.
+  const commands = useMemo(
+    () => [...clientCommands, ...(serverCommands ?? [])],
+    [clientCommands, serverCommands],
   );
 
   /** ``/xxx`` at the very start of the input opens the palette. */
@@ -254,28 +252,33 @@ export function Composer({
   }, []);
 
   const activeWorkspaceName =
-    workspaces.find((item) => item.path === activeWorkspace)?.name ?? "默认工作区";
+    workspaces.find((item) => item.path === activeWorkspace)?.name ??
+    "默认工作区";
   const agentLabel =
     agents.find((item) => item.name === activeAgent)?.title ?? "标准模式";
   const activeEntry = models.find((item) => item.key === activeModel) ?? null;
   const activeLabel = activeEntry
     ? `${activeEntry.model} · ${activeEntry.provider}`
     : activeModel
-      ? activeModel.split("::").at(-1) ?? activeModel
+      ? (activeModel.split("::").at(-1) ?? activeModel)
       : "未选择模型";
 
   const canSend =
-    !busy && !guard.blocked && (draft.trim().length > 0 || attachments.length > 0);
+    !busy &&
+    (filteredCommands.length > 0 ||
+      (!guard.blocked && (draft.trim().length > 0 || attachments.length > 0)));
 
   const submit = () => {
     if (busy) return;
+    // A slash command is answered by the backend and needs no model, so it is
+    // checked before the guard: `/help` must work on a fresh install.
+    if (slashQuery !== null && filteredCommands.length > 0) {
+      runCommand(filteredCommands[commandIndex]);
+      return;
+    }
     if (!draft.trim() && attachments.length === 0) return;
     if (guard.blocked) {
       onCommand("blocked");
-      return;
-    }
-    if (slashQuery !== null && filteredCommands.length > 0) {
-      runCommand(filteredCommands[commandIndex]);
       return;
     }
     onSend(draft);
@@ -287,7 +290,9 @@ export function Composer({
     if (command.name === "permission") setOpen("permission");
     else if (command.name === "model") setOpen("model");
     else if (command.name === "agent") setOpen("agent");
-    else onCommand(command.name);
+    // Everything else goes out as a message: the transcript shows the command
+    // and the backend's handler emits the steps that follow.
+    else onSend(`/${command.name}`);
   };
 
   /**
@@ -316,9 +321,13 @@ export function Composer({
       if (!hasSelection) {
         event.preventDefault();
         onAttach([
-          new File([text], `pasted-${new Date().toISOString().slice(11, 19)}.txt`, {
-            type: "text/plain",
-          }),
+          new File(
+            [text],
+            `pasted-${new Date().toISOString().slice(11, 19)}.txt`,
+            {
+              type: "text/plain",
+            },
+          ),
         ]);
       }
     }
@@ -412,9 +421,13 @@ export function Composer({
       <div className="relative rounded-2xl border border-border bg-card shadow-sm focus-within:border-ring/60">
         {slashQuery !== null && filteredCommands.length > 0 && (
           <div className="absolute bottom-full left-0 z-30 mb-2 w-full overflow-hidden rounded-xl border border-border bg-popover shadow-lg">
-            <div className="px-3 py-1.5 text-[11px] text-muted-foreground">指令</div>
+            <div className="px-3 py-1.5 text-[11px] text-muted-foreground">
+              指令
+            </div>
             {filteredCommands.map((command, index) => {
-              const Icon = COMMAND_ICONS[command.icon ?? "compact"];
+              const Icon = command.icon
+                ? COMMAND_ICONS[command.icon]
+                : TerminalIcon;
               return (
                 <button
                   key={command.name}
@@ -428,7 +441,9 @@ export function Composer({
                 >
                   <Icon className="size-4 shrink-0 text-muted-foreground" />
                   <span>{command.title}</span>
-                  <span className="text-xs text-muted-foreground">{command.name}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {command.name}
+                  </span>
                   <span className="ml-auto text-xs text-muted-foreground">
                     {command.description}
                   </span>
@@ -481,7 +496,9 @@ export function Composer({
               if (event.key === "ArrowUp") {
                 event.preventDefault();
                 setCommandIndex(
-                  (prev) => (prev - 1 + filteredCommands.length) % filteredCommands.length,
+                  (prev) =>
+                    (prev - 1 + filteredCommands.length) %
+                    filteredCommands.length,
                 );
                 return;
               }
@@ -567,7 +584,10 @@ export function Composer({
               onOpenChange={(value) => setOpen(value ? "model" : null)}
               trigger={
                 <>
-                  <span className="max-w-40 truncate max-sm:max-w-24" title={activeLabel}>
+                  <span
+                    className="max-w-40 truncate max-sm:max-w-24"
+                    title={activeLabel}
+                  >
                     {activeLabel}
                   </span>
                   <ChevronDownIcon className="size-3.5 opacity-60" />
@@ -618,8 +638,8 @@ export function Composer({
                     ))}
                   </select>
                   <p className="mt-1 text-[10px] leading-4 text-muted-foreground">
-                    作为 <code>reasoning_effort</code> 发给模型，只对这个模型生效；
-                    服务商不支持时会忽略该参数。
+                    作为 <code>reasoning_effort</code>{" "}
+                    发给模型，只对这个模型生效； 服务商不支持时会忽略该参数。
                   </p>
                 </div>
               )}

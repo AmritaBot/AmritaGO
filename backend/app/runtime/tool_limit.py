@@ -232,9 +232,7 @@ class LimitAwareStrategy(ReActAgentStrategy):
                 "function_name": tool_call.function.name,
             },
         )
-        await self.io_stream.yield_response(
-            MessageWithMetadata(content=content, metadata=metadata)
-        )
+        await self.io_stream.yield_response(MessageWithMetadata(content=content, metadata=metadata))
 
     async def _publish(self, event: dict[str, Any]) -> None:
         """Send a transient event: the UI needs it, the transcript does not."""

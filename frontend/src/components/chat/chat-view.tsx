@@ -22,6 +22,7 @@ import type { SettingsTab } from "@/components/chat/settings-dialog";
 import {
   Composer,
   type AgentOption,
+  type CommandOption,
   type GuardState,
   type PendingAttachment,
   type Permission,
@@ -472,7 +473,6 @@ export function ChatView({
   onSelectAgent,
   onSelectModel,
   onModelsChanged,
-  onClearSession,
   onOpenSettings,
   onBranch,
 }: {
@@ -490,7 +490,6 @@ export function ChatView({
   onSelectModel: (name: string) => void;
   /** Re-read the provider list after a model attribute was changed. */
   onModelsChanged: () => void;
-  onClearSession: () => void;
   onOpenSettings: (tab?: SettingsTab) => void;
   /** Fork the session at a history entry, keeping that message. */
   onBranch: (entryId: string) => void;
@@ -520,6 +519,9 @@ export function ChatView({
   const [permission, setPermission] = useState<Permission>("workspace");
   //: The tool call the user asked to cancel; the dialog collects the reason.
   const [cancelTarget, setCancelTarget] = useState<RunningTool | null>(null);
+  //: Commands the backend intercepts. Fetched instead of hard-coded, so a
+  //: plugin's command shows up without a front-end change.
+  const [commands, setCommands] = useState<CommandOption[]>([]);
   const [pending, setPending] = useState<PendingAttachment[]>([]);
   const [uploading, setUploading] = useState(0);
   const scroller = useRef<HTMLDivElement>(null);
@@ -562,30 +564,9 @@ export function ChatView({
   };
 
   /**
-   * ``/compact``: fold older history now.
-   *
-   * The backend refuses while a turn is live (it holds its own context copy),
-   * so the refusal is shown as-is instead of being retried.
+   * Context folding now happens inside the turn (``/compact`` is a message),
+   * so this component no longer calls the REST endpoint.
    */
-  const compactNow = async () => {
-    try {
-      const result = await api.compactSession(sessionId);
-      if (result.compacted) {
-        toast.success(
-          `已把较早的 ${result.folded} 条消息折叠成摘要（${result.summary_chars} 字），` +
-            `保留最近 ${result.kept} 条`,
-        );
-        void reload();
-        return;
-      }
-      toast.info(result.detail || "没有可折叠的历史");
-    } catch (error) {
-      // The backend's reason is already a sentence ("这一轮还在跑…"); prefixing
-      // it with "压缩失败" would read as a bug rather than a guard.
-      toast.error(String(error).replace(/^Error:\s*/, ""));
-    }
-  };
-
   const guard: GuardState = useMemo(() => {
     if (models.length === 0) {
       return {
@@ -666,6 +647,27 @@ export function ChatView({
       }
     }
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .listCommands()
+      .then((result) => {
+        if (cancelled) return;
+        setCommands(
+          result.commands.map((command) => ({
+            name: command.name,
+            title: command.title,
+            description: command.description,
+            source: command.source,
+          })),
+        );
+      })
+      .catch(() => setCommands([]));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useLayoutEffect(() => {
     if (!stickToBottom.current) return;
@@ -804,12 +806,14 @@ export function ChatView({
           onSelectAgent={onSelectAgent}
           onSelectModel={onSelectModel}
           onSelectPermission={setPermission}
+          commands={commands}
           onConfigureModel={(key, patch) => {
             void configureModel(key, patch);
           }}
           onCommand={(name) => {
-            if (name === "clear") onClearSession();
-            if (name === "compact") void compactNow();
+            // Client-side commands only: permission/agent open a popover inside
+            // the composer, and everything the backend intercepts (``/compact``,
+            // plugin commands) is sent as a message by the composer itself.
             if (name === "model") onOpenSettings("providers");
             if (name === "blocked") toast.error(guard.blocked ?? "无法发送");
           }}
@@ -850,7 +854,9 @@ export function ChatView({
         onSubmit={(reason) => {
           const target = cancelTarget;
           if (!target) return null;
-          return cancelTool(target.tool_id, reason) ? null : "没有连上服务端，请稍后再试";
+          return cancelTool(target.tool_id, reason)
+            ? null
+            : "没有连上服务端，请稍后再试";
         }}
       />
     </div>

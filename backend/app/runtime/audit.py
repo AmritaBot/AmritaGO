@@ -102,9 +102,7 @@ class AuditBroker:
                 # still deciding. Close the dialog: an answer to a question whose
                 # caller is gone would only produce "已过期".
                 with suppress(asyncio.CancelledError):
-                    await channel.publish(
-                        {"type": "confirm_closed", "request_id": request_id}
-                    )
+                    await channel.publish({"type": "confirm_closed", "request_id": request_id})
                 raise
             decision.request_id = request_id
             return decision

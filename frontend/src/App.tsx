@@ -352,9 +352,6 @@ export default function App() {
             onModelsChanged={() => {
               void refreshContext();
             }}
-            onClearSession={async () => {
-              await api.clearSession(activeId);
-            }}
             onOpenSettings={(tab) => {
               setSettingsTab(tab ?? "providers");
               setSettingsOpen(true);

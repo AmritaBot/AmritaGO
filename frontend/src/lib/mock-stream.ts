@@ -102,6 +102,22 @@ export function wantsCompactDemo(prompt: string): boolean {
   return /压缩|compact|摘要/i.test(prompt);
 }
 
+/**
+ * Does the prompt ask to cancel a running tool?
+ *
+ * The cancel button only exists while the server holds the call, so this demo
+ * leaves a call running and waits — the dialog is the rest of the turn, exactly
+ * like the audit demo.
+ */
+export function wantsToolCancelDemo(prompt: string): boolean {
+  return /取消|中止|cancel/i.test(prompt);
+}
+
+/** Does the prompt ask for the tool-timeout demo? */
+export function wantsToolTimeoutDemo(prompt: string): boolean {
+  return /超时|timeout/i.test(prompt);
+}
+
 export function isMockLimit(requestId: string): boolean {
   return requestId.startsWith(MOCK_LIMIT_PREFIX);
 }
@@ -261,14 +277,109 @@ export function startMockTurn({
     return;
   }
 
-  if (wantsCompactDemo(prompt)) {
-    // Mirrors the backend: "compacting" while the fold runs, "compacted" once
-    // the summary is in the history.
+  if (wantsToolCancelDemo(prompt)) {
+    // A call is running and stays running: the row shows 取消, and answering
+    // the dialog is what ends this turn (see ``finishMockToolCancel``).
+    const toolId = `mock-call-${Date.now()}`;
     schedule(
       () =>
         onEvent({
           type: "meta",
-          content: "正在压缩上下文：把较早的 48 条消息折叠成摘要，保留最近 6 条。",
+          content: "Calling function unix_run\n",
+          metadata: {
+            type: "function_call",
+            function_name: "unix_run",
+            is_done: false,
+            tool_id: toolId,
+            arguments: JSON.stringify({ command: "journalctl -k -f" }),
+          },
+        }),
+      280,
+    );
+    schedule(
+      () =>
+        onEvent({
+          type: "tool_running",
+          tool_id: toolId,
+          tool: "unix_run",
+          timeout: 600,
+          started_at: Date.now() / 1000,
+        }),
+      320,
+    );
+    return;
+  }
+
+  if (wantsToolTimeoutDemo(prompt)) {
+    const toolId = `mock-call-${Date.now()}`;
+    schedule(
+      () =>
+        onEvent({
+          type: "meta",
+          content: "Calling function unix_run\n",
+          metadata: {
+            type: "function_call",
+            function_name: "unix_run",
+            is_done: false,
+            tool_id: toolId,
+            arguments: JSON.stringify({ command: "journalctl -k -f" }),
+          },
+        }),
+      280,
+    );
+    schedule(
+      () =>
+        onEvent({
+          type: "tool_running",
+          tool_id: toolId,
+          tool: "unix_run",
+          timeout: 3,
+          started_at: Date.now() / 1000,
+        }),
+      320,
+    );
+    schedule(() => {
+      onEvent({
+        type: "meta",
+        content: "已超时：这次工具调用超过 3 秒仍未返回，已被终止。",
+        metadata: {
+          type: "system",
+          extra_type: "tool_timeout",
+          tool_id: toolId,
+          function_name: "unix_run",
+        },
+      });
+      onEvent({
+        type: "meta",
+        content: "Called tool unix_run\n",
+        metadata: {
+          type: "function_call",
+          function_name: "unix_run",
+          is_done: true,
+          tool_id: toolId,
+          result: "已超时：超过 3 秒仍未返回，已被终止。",
+        },
+      });
+      onEvent({ type: "tool_finished", tool_id: toolId, outcome: "timeout" });
+      onEvent({
+        type: "delta",
+        text: "这条命令超时了，本轮没有中断；在真实环境里模型会收到超时原因并换个做法。",
+      });
+      onEvent(mockDone(3200, 1));
+    }, 3400);
+    return;
+  }
+
+  if (wantsCompactDemo(prompt)) {
+    // Mirrors the backend: "compacting" while the fold runs, "compacted" once
+    // the summary is in the history — and the turn ends there, because
+    // ``/compact`` is a command, not a question for the model.
+    schedule(
+      () =>
+        onEvent({
+          type: "meta",
+          content:
+            "正在压缩上下文：把较早的 48 条消息折叠成摘要，保留最近 6 条。",
           metadata: {
             type: "system",
             extra_type: "compaction_started",
@@ -278,21 +389,21 @@ export function startMockTurn({
         }),
       260,
     );
-    schedule(
-      () =>
-        onEvent({
-          type: "meta",
-          content: "已把较早的 48 条消息折叠为摘要（312 字），保留最近 6 条。",
-          metadata: {
-            type: "system",
-            extra_type: "compaction_finished",
-            folded: 48,
-            kept: 6,
-            summary_chars: 312,
-          },
-        }),
-      780,
-    );
+    schedule(() => {
+      onEvent({
+        type: "meta",
+        content: "已把较早的 48 条消息折叠为摘要（312 字），保留最近 6 条。",
+        metadata: {
+          type: "system",
+          extra_type: "compaction_finished",
+          folded: 48,
+          kept: 6,
+          summary_chars: 312,
+        },
+      });
+      onEvent(mockDone(780, 0));
+    }, 780);
+    return;
   }
 
   if (wantsLimitDemo(prompt)) {
@@ -483,6 +594,53 @@ export function finishMockLimit({
       : "好的，就到这里。下面是用已有信息整理出的结论（测试模式，内容是伪造的）。";
   onEvent({ type: "delta", text });
   onEvent(mockDone(600, 2));
+}
+
+/**
+ * Finish the tool-cancel demo after the user answers.
+ *
+ * Mirrors the backend: the reason becomes the tool's result, the call is marked
+ * cancelled (not "完成"), and the turn keeps going instead of dying.
+ */
+export function finishMockToolCancel({
+  onEvent,
+  toolId,
+  tool,
+  reason,
+}: {
+  onEvent: (event: StreamEvent) => void;
+  toolId: string;
+  tool: string;
+  reason: string;
+}): void {
+  const notice = `已取消：用户手动终止了这次工具调用（原因：${reason}）。`;
+  onEvent({
+    type: "meta",
+    content: notice,
+    metadata: {
+      type: "system",
+      extra_type: "tool_cancelled",
+      tool_id: toolId,
+      function_name: tool,
+    },
+  });
+  onEvent({
+    type: "meta",
+    content: `Called tool ${tool}\n`,
+    metadata: {
+      type: "function_call",
+      function_name: tool,
+      is_done: true,
+      tool_id: toolId,
+      result: notice,
+    },
+  });
+  onEvent({ type: "tool_finished", tool_id: toolId, outcome: "cancelled" });
+  onEvent({
+    type: "delta",
+    text: "已经停掉这次调用。在真实环境里，这段原因会作为工具结果交给模型，它会换个做法继续。",
+  });
+  onEvent(mockDone(600, 1));
 }
 
 /**

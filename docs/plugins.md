@@ -116,9 +116,37 @@ async def plugin(ctx):
 - `ctx.config(PydanticModel)`：声明插件配置。
 - `ctx.on(event, handler)`：订阅运行事件；当前常见事件为 `run_start`、`run_end`。
 - `ctx.workflow(WorkflowSpec(...))`：注册工作流。
+- `ctx.command(CommandSpec(...))`：注册斜杠指令，随插件激活注册、停用失效。
 - `ctx.mcp(MCPProvider(...))`：向工具池报告 MCP 来源。
 - `ctx.apply(plugin, name=..., description=...)`：注册另一个插件，需重新加载后激活。
 
 插件禁用时会跳过激活，其工具、工作流及钩子不会加入当前工具池。`core-tools`、`files` 和 `todos` 是固定启用的核心插件，不能从界面禁用。
+
+### 斜杠指令示例
+
+```python
+from app.runtime.commands import CommandSpec
+
+
+async def hello_plugin(ctx):
+    async def hello(command_ctx):
+        # ``say`` 输出正文，``emit`` 输出一条 trace 步骤；两者都进会话历史。
+        await command_ctx.emit("插件指令被调用", {"type": "system", "extra_type": None})
+        await command_ctx.say(f"你好，{command_ctx.args or '陌生人'}")
+        return "已问候"  # 返回值作为本轮助手正文持久化
+
+    ctx.command(
+        CommandSpec(
+            name="hello",
+            title="打招呼",
+            description="回一句问候，参数作为名字。",
+            handler=hello,
+            usage="/hello <名字>",
+        )
+    )
+    yield
+```
+
+指令在 `activate()` 时进入注册表，在 `deactivate()` 时随快照一起消失；名字与内置指令或已注册指令冲突会直接报错，而不是静默覆盖。
 
 启用设置中的开发者模式（或设置 `AMRITA_GO_DEBUG=1`）可检查插件重复激活时声明结果是否一致；这不能代替代码审计或安全测试。

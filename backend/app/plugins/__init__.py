@@ -16,7 +16,7 @@ import inspect
 import os
 import sys
 from collections.abc import Awaitable, Callable, Generator, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -26,6 +26,7 @@ from amrita_sense.logging import debug_log, logger
 from pydantic import BaseModel
 
 from app.core.config import PATHS
+from app.runtime.commands import BUILTIN_COMMANDS, COMMANDS, CommandSpec
 from app.runtime.workflows import BUILTIN_WORKFLOWS, WORKFLOWS, WorkflowSpec
 
 HookHandler = Callable[[Mapping[str, Any]], Awaitable[Any] | Any]
@@ -78,6 +79,7 @@ class PluginInfo:
     module: str
     tools: tuple[str, ...] = ()
     workflows: tuple[str, ...] = ()
+    commands: tuple[str, ...] = ()
     mcp: tuple[str, ...] = ()
     hooks: tuple[str, ...] = ()
     # Name of the Pydantic model the plugin declared, if any.
@@ -90,6 +92,7 @@ class PluginInfo:
             "module": self.module,
             "tools": list(self.tools),
             "workflows": list(self.workflows),
+            "commands": list(self.commands),
             "mcp": list(self.mcp),
             "hooks": list(self.hooks),
             "has_config": self.config_name is not None,
@@ -103,6 +106,7 @@ class PluginSnapshot:
     tool_sources: tuple[ToolSource, ...] = ()
     mcp_providers: tuple[MCPProvider, ...] = ()
     workflows: Mapping[str, WorkflowSpec] = field(default_factory=lambda: MappingProxyType({}))
+    commands: Mapping[str, CommandSpec] = field(default_factory=lambda: MappingProxyType({}))
     hooks: Mapping[str, tuple[HookHandler, ...]] = field(
         default_factory=lambda: MappingProxyType({})
     )
@@ -119,6 +123,7 @@ class PluginSnapshot:
                 (spec.name, spec.source)
                 for spec in sorted(self.workflows.values(), key=lambda item: item.name)
             ),
+            tuple(sorted((name, spec.source) for name, spec in self.commands.items())),
             hooks,
             tuple(sorted(self.configs)),
         )
@@ -137,6 +142,10 @@ class PluginSnapshot:
             "workflows": [
                 spec.to_public()
                 for spec in sorted(self.workflows.values(), key=lambda item: item.name)
+            ],
+            "commands": [
+                spec.to_public()
+                for spec in sorted(self.commands.values(), key=lambda item: item.name)
             ],
             "hooks": sorted(self.hooks),
         }
@@ -163,12 +172,14 @@ class _Activation:
         self.tool_sources: list[ToolSource] = []
         self.mcp_providers: list[MCPProvider] = []
         self.workflows: dict[str, WorkflowSpec] = {}
+        self.commands: dict[str, CommandSpec] = {}
         self.hooks: dict[str, list[HookHandler]] = {}
         self.configs: dict[str, type[BaseModel]] = {}
         self.infos: list[PluginInfo] = []
         self._current: list[str] = []
         self._tools: list[str] = []
         self._workflows: list[str] = []
+        self._commands: list[str] = []
         self._mcp: list[str] = []
         self._hooks: list[str] = []
         self._config: str | None = None
@@ -177,6 +188,7 @@ class _Activation:
         self._current = [spec.name, spec.description, spec.module]
         self._tools = []
         self._workflows = []
+        self._commands = []
         self._mcp = []
         self._hooks = []
         self._config = None
@@ -194,6 +206,20 @@ class _Activation:
             raise PluginRegistrationError(f"workflow '{spec.name}' is already registered")
         self.workflows[spec.name] = spec
         self._workflows.append(spec.name)
+
+    def add_command(self, spec: CommandSpec) -> None:
+        """Register a slash command, owned by the plugin declaring it.
+
+        The source is stamped here rather than trusted from the caller: a
+        command that appears in ``/help`` under the wrong plugin is worse than
+        no attribution at all.
+        """
+        if not self._current:
+            raise PluginError("a command must be declared from inside a plugin")
+        if spec.name in BUILTIN_COMMANDS or spec.name in self.commands:
+            raise PluginRegistrationError(f"command '/{spec.name}' is already registered")
+        self.commands[spec.name] = replace(spec, source=self._current[0])
+        self._commands.append(spec.name)
 
     def add_hook(self, event: str, handler: HookHandler) -> None:
         self.hooks.setdefault(event, []).append(handler)
@@ -219,6 +245,7 @@ class _Activation:
                 module=module,
                 tools=tuple(self._tools),
                 workflows=tuple(self._workflows),
+                commands=tuple(self._commands),
                 mcp=tuple(self._mcp),
                 hooks=tuple(sorted(set(self._hooks))),
                 config_name=self._config,
@@ -232,6 +259,7 @@ class _Activation:
             tool_sources=tuple(self.tool_sources),
             mcp_providers=tuple(self.mcp_providers),
             workflows=MappingProxyType(dict(self.workflows)),
+            commands=MappingProxyType(dict(self.commands)),
             hooks=MappingProxyType(
                 {event: tuple(handlers) for event, handlers in self.hooks.items()}
             ),
@@ -333,6 +361,10 @@ class PluginContext:
 
     def workflow(self, spec: WorkflowSpec) -> None:
         self._require_activation().add_workflow(spec)
+
+    def command(self, spec: CommandSpec) -> None:
+        """Declare a slash command; it is registered for this activation only."""
+        self._require_activation().add_command(spec)
 
     def on(self, event: str, handler: HookHandler) -> None:
         self._require_activation().add_hook(event, handler)
@@ -498,12 +530,15 @@ class PluginRuntime:
                 snapshot = second_snapshot
             self._snapshot = snapshot
             WORKFLOWS.install_extra(snapshot.workflows)
+            COMMANDS.install_extra(snapshot.commands)
             return snapshot
 
     async def deactivate(self) -> None:
         await self._unload()
         self._snapshot = EMPTY_SNAPSHOT
         WORKFLOWS.install_extra({})
+        # Commands disappear with their plugin: the snapshot is the registry.
+        COMMANDS.install_extra({})
 
     async def reload(self) -> PluginSnapshot:
         return await self.activate()

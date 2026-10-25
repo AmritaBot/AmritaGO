@@ -309,6 +309,50 @@ def decrypt_blob(data_dir: Path, token: bytes) -> bytes:
         ) from exc
 
 
+def new_key() -> bytes:
+    """A fresh Fernet key. Nothing is written until :func:`store_key` is called."""
+    return Fernet.generate_key()
+
+
+def store_key(data_dir: Path, key: bytes) -> KeyInfo:
+    """Persist *key* where this data directory reads its key from.
+
+    Mirrors :func:`load_key`'s precedence: an existing ``secret.key`` wins over
+    the keyring, so writing to the keyring while a stale file exists would leave
+    the new key unused. A missing keyring entry falls back to the file.
+    """
+    path = _key_path(data_dir)
+    store = None if path.exists() else _keyring_store(data_dir)
+    if store is not None and store.save(key):
+        return KeyInfo("keyring", f"OS keyring, service {KEYRING_SERVICE!r}")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.new")
+    tmp.unlink(missing_ok=True)
+    handle = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(handle, "wb") as stream:
+        stream.write(key)
+    _restrict_permissions(tmp)
+    tmp.replace(path)
+    return KeyInfo("file", str(path))
+
+
+def backup_key(data_dir: Path, key: bytes) -> Path:
+    """Write *key* beside the data as ``secret.key.bak`` (mode 0600).
+
+    Only used before a rotation, and only when the key already lives in a file:
+    a backup of a keyring- or env-sourced key would put material on disk that
+    the user deliberately kept elsewhere.
+    """
+    path = data_dir / f"{KEY_FILE}.bak"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(handle, "wb") as stream:
+        stream.write(key)
+    _restrict_permissions(path)
+    return path
+
+
 __all__ = [
     "ENV_NO_KEYRING",
     "ENV_SECRET",
@@ -316,8 +360,11 @@ __all__ = [
     "KEY_FILE",
     "KeyInfo",
     "SecretError",
+    "backup_key",
     "decrypt_blob",
     "describe_key",
     "encrypt_blob",
     "load_key",
+    "new_key",
+    "store_key",
 ]

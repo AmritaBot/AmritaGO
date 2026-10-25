@@ -38,9 +38,11 @@ from app.core.settings import AppSettings
 from app.runtime import fallback_watch, session_memory
 from app.runtime.attachments import build_user_content
 from app.runtime.billing import SessionBillingBackend, TurnUsage, summarize
+from app.runtime.commands import COMMANDS, CommandContext, CommandMatch
 from app.runtime.sessions import (
     HistoryEntry,
     append_history,
+    bump_session,
     get_meta,
     load_context,
     record_turn_usage,
@@ -465,13 +467,67 @@ def _live_usage(records: list[Any]) -> dict[str, Any]:
     }
 
 
+async def _run_command(
+    channel: StreamChannel,
+    *,
+    session_id: str,
+    settings: AppSettings,
+    match: CommandMatch,
+) -> None:
+    """Run one slash command inside the turn's stream.
+
+    Not a plugin hook and not an agent run: no preset, no tools, no budget. The
+    user message is already in history, and whatever the handler emits becomes
+    this turn's assistant entry — so ``/compact`` survives a reload as a step
+    in the transcript rather than a notice that scrolled away.
+    """
+    spec = COMMANDS.require(match.name)
+    context = CommandContext(
+        session_id=session_id,
+        args=match.args,
+        settings=settings,
+        channel=channel,
+    )
+    text = ""
+    try:
+        text = (await spec.handler(context)) or ""
+    except Exception as exc:
+        logger.opt(exception=exc).error(f"Command /{spec.name} failed")
+        text = f"指令 /{spec.name} 执行失败：{type(exc).__name__}: {exc}"
+        await context.emit(text, {"type": "system", "extra_type": "command_failed"})
+
+    if text or context.events:
+        await append_history(
+            session_id,
+            HistoryEntry(
+                role="assistant",
+                content=text,
+                events=context.events,
+                workflow="command",
+                agent=spec.name,
+            ),
+        )
+    await bump_session(session_id)
+    await channel.publish(
+        {
+            "type": "done",
+            "usage": None,
+            "totals": None,
+            "title": None,
+            "message_count": None,
+            "workflow": "command",
+            "agent": spec.name,
+        }
+    )
+
+
 async def run_turn(
     channel: StreamChannel,
     *,
     session_id: str,
     user_input: str,
     settings: AppSettings,
-    preset: ModelPreset,
+    preset: ModelPreset | None,
     agent: AgentPreset | None = None,
     attachments: list[dict[str, Any]] | None = None,
     requested_access: str | None = None,
@@ -482,8 +538,30 @@ async def run_turn(
     mid-answer only stops reading. Reconnect and the buffer replays. Plugin
     hooks are dispatched here (and only here), so a hook cannot fire for a run
     that never started.
+
+    A message that names a registered slash command is answered by that
+    command instead of the agent: it needs no preset, no API key and no tools.
     """
     from app.plugins import PLUGINS
+
+    command = COMMANDS.match(user_input)
+    if command is not None:
+        await append_history(
+            session_id,
+            HistoryEntry(
+                role="user",
+                content=user_input,
+                attachments=list(attachments or []),
+            ),
+        )
+        await _run_command(channel, session_id=session_id, settings=settings, match=command)
+        return
+
+    if preset is None:
+        # Defensive: the socket resolves a preset before starting a real turn.
+        await channel.publish({"type": "error", "message": "这一轮没有可用的模型"})
+        await channel.publish({"type": "done", "usage": None, "totals": None})
+        return
 
     await PLUGINS.dispatch(
         "run_start",

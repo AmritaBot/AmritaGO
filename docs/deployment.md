@@ -26,6 +26,35 @@ uvx --from . amrita-go
 
 项目开发配置将 `amrita-core` 指向仓库外的 `../../AmritaCore` 源码目录，因此源码运行需要准备该同级目录。普通用户优先使用发布到 PyPI 的 wheel，不需要 AmritaCore 源码或 Bun。
 
+### 命令行参数与子命令
+
+`amrita-go` 不带子命令时启动服务；参数在导入配置之前生效，因此会覆盖同名环境变量：
+
+```bash
+amrita-go --host 127.0.0.1 --port 9000 --data ~/.amrita
+amrita-go --secret "$AMRITA_GO_SECRET"          # 等价于设置 AMRITA_GO_SECRET
+amrita-go export latest -o chat.md              # 导出最近更新的会话
+amrita-go export 3f2a9c -f json -o chat.json    # 按 ID 前缀或标题选择
+amrita-go rotate-key                            # 交互确认后轮换凭据密钥
+```
+
+| 参数 | 覆盖的环境变量 | 说明 |
+| --- | --- | --- |
+| `--host` | `AMRITA_GO_HOST` | 监听地址 |
+| `--port` | `AMRITA_GO_PORT` | 监听端口 |
+| `--secret` | `AMRITA_GO_SECRET` | 凭据加密密钥（Base64 的 32 字节 Fernet key） |
+| `--data` | `AMRITA_GO_DATA` | 数据目录 |
+| `--debug` | `AMRITA_GO_DEBUG=1` | 开发者模式 |
+
+`export` 支持 `-f markdown|json` 与 `-o <文件>`（`-o -` 写到标准输出）；会话参数接受完整 ID、唯一前缀、标题或 `latest`。
+
+`rotate-key` 生成新密钥并用它重新加密所有 Provider 凭据：
+
+- 当前密钥来自 `AMRITA_GO_SECRET` 时**拒绝执行**——环境变量在读取时永远优先，写到磁盘的新密钥不会被使用。
+- 先把所有凭据重新加密到临时文件，全部成功后才替换密钥，避免中途失败导致凭据不可读。
+- 密钥来自 `secret.key` 时，旧密钥会备份为 `secret.key.bak`（权限 0600），确认无误后可删除。
+- 轮换后请重启正在运行的 AmritaGO 进程。
+
 ### 设置数据和工作区目录
 
 默认监听地址是 `127.0.0.1:8000`。可以在运行前设定数据目录和工作区的 `.amrita` 目录：

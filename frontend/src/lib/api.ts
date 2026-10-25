@@ -402,6 +402,21 @@ export interface TodoList {
   done: number;
 }
 
+/**
+ * A slash command the backend intercepts before starting an agent turn.
+ *
+ * Built-ins and plugin-provided commands look the same here; `source` is only
+ * there to explain where an unfamiliar command came from.
+ */
+export interface CommandInfo {
+  name: string;
+  title: string;
+  description: string;
+  /** Ready-to-type form, e.g. `/compact`. */
+  usage: string;
+  source: string;
+}
+
 /** A tool call waiting for the user's judgement. */
 export interface ConfirmRequest {
   request_id: string;
@@ -690,14 +705,15 @@ export const api = {
     }),
 
   // legacy presets (read-only)
-  listLegacyPresets: () =>
-    request<{ presets: LegacyPreset[] }>("/presets"),
+  listLegacyPresets: () => request<{ presets: LegacyPreset[] }>("/presets"),
 
   // skills
   listSkills: () =>
-    request<{ enabled: string[] | null; directories: string[]; skills: Skill[] }>(
-      "/skills",
-    ),
+    request<{
+      enabled: string[] | null;
+      directories: string[];
+      skills: Skill[];
+    }>("/skills"),
 
   // agent presets
   listAgents: () =>
@@ -728,9 +744,12 @@ export const api = {
       { method: "DELETE" },
     ),
   activateAgent: (name: string) =>
-    request<{ active: string }>(`/agents/${encodeURIComponent(name)}/activate`, {
-      method: "POST",
-    }),
+    request<{ active: string }>(
+      `/agents/${encodeURIComponent(name)}/activate`,
+      {
+        method: "POST",
+      },
+    ),
 
   // workflows
   listWorkflows: () => request<WorkflowListing>("/workflows"),
@@ -769,9 +788,7 @@ export const api = {
       mcp: MCPSource[];
       workflows: WorkflowSpec[];
       plugins: PluginInfo[];
-    }>(
-      `/capabilities${agent ? `?agent=${encodeURIComponent(agent)}` : ""}`,
-    ),
+    }>(`/capabilities${agent ? `?agent=${encodeURIComponent(agent)}` : ""}`),
 
   // workspaces
   listWorkspaces: () =>
@@ -847,6 +864,7 @@ export const api = {
     }),
 
   // sessions
+  listCommands: () => request<{ commands: CommandInfo[] }>("/commands"),
   listSessions: (includeArchived = false) =>
     request<{ sessions: SessionMeta[] }>(
       `/sessions?include_archived=${includeArchived}`,
@@ -857,10 +875,9 @@ export const api = {
       body: JSON.stringify({ title }),
     }),
   renameSession: (id: string, title: string) =>
-    request<SessionMeta>(
-      `/sessions/${id}?title=${encodeURIComponent(title)}`,
-      { method: "PATCH" },
-    ),
+    request<SessionMeta>(`/sessions/${id}?title=${encodeURIComponent(title)}`, {
+      method: "PATCH",
+    }),
   deleteSession: (id: string) =>
     request<{ ok: boolean }>(`/sessions/${id}`, { method: "DELETE" }),
   archiveSession: (id: string, archived = true) =>

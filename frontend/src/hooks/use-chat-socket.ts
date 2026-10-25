@@ -32,6 +32,7 @@ import {
 import {
   finishMockAudit,
   finishMockLimit,
+  finishMockToolCancel,
   isMockConfirm,
   isMockLimit,
   isMockMode,
@@ -483,7 +484,23 @@ export function useChatSocket(sessionId: string | null) {
           }
           // A gate cannot outlive its run.
           setLimitRequest(null);
-          setLastUsage(event.usage ?? null);
+          // A command turn has no usage; keep the previous turn's figures
+          // instead of blanking the footer.
+          if (event.usage) setLastUsage(event.usage);
+          if (event.workflow === "command" && sessionRef.current) {
+            // A command turn reports no usage of its own, but it can change what
+            // the counters describe — ``/compact`` shrinks the context — so the
+            // footer is refreshed instead of showing a stale number.
+            const id = sessionRef.current;
+            api
+              .usage(id)
+              .then((usage) => {
+                if (sessionRef.current !== id) return;
+                setTotals(usage.totals);
+                setContextMessages(usage.context.messages);
+              })
+              .catch(() => undefined);
+          }
           // A parked confirmation cannot outlive its turn; the server already
           // resolved it (answered, timed out or cancelled).
           setPendingConfirm(null);
@@ -909,13 +926,16 @@ export function useChatSocket(sessionId: string | null) {
   const cancelTool = useCallback(
     (toolId: string, reason: string) => {
       if (isMockMode()) {
-        // Test mode has no server to ask; drop the local entry so the button
-        // disappears the way a real ``tool_finished`` would make it.
+        // Test mode has no server to ask, so the same events are fabricated:
+        // the row must end up "已取消" and the turn must continue, exactly as
+        // a real cancel does.
+        const tool = runningTools[toolId]?.tool ?? "tool";
         setRunningTools((prev) => {
           const next = { ...prev };
           delete next[toolId];
           return next;
         });
+        finishMockToolCancel({ onEvent: handleEvent, toolId, tool, reason });
         return true;
       }
       const socket = socketRef.current;
@@ -933,7 +953,7 @@ export function useChatSocket(sessionId: string | null) {
       );
       return true;
     },
-    [sessionId],
+    [handleEvent, runningTools, sessionId],
   );
 
   /** Forget the plan locally and on disk. */
