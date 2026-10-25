@@ -1,5 +1,11 @@
 # AmritaGO
 
+![](amria/amria-nobg-with-logo.png)
+
+> Amria——项目吉祥物
+>
+> Designed by [RAX4096](https://github.com/JohnRichard4096).
+
 AmritaGO 是本地运行的 Agent 工作台，提供对话、工具调用、Agent 预设、MCP 和插件扩展。前端由 React 构建，后端基于 AmritaCore、FastAPI 和 WebSocket。
 
 > [!WARNING]
@@ -7,10 +13,10 @@ AmritaGO 是本地运行的 Agent 工作台，提供对话、工具调用、Agen
 
 ## 开始使用
 
-若已发布到 PyPI，可用 `uvx` 临时运行（首次运行会自动安装）：
+可用 `uvx` 临时运行（首次运行会自动安装）：
 
 ```bash
-uvx --from "amrita-go==0.1.0a1" amrita-go
+uvx amrita-go
 ```
 
 Alpha 版本的发布状态可能变化；如果该版本尚未发布，请按[部署指南](docs/deployment.md)从源码运行。启动后默认访问 `http://127.0.0.1:8000`。
