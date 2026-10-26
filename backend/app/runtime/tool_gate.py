@@ -20,10 +20,10 @@ from typing import Any
 
 from amrita_sense.logging import logger
 
-    # Supply a default reason for clients that omit it.
+# Supply a default reason for clients that omit it.
 DEFAULT_REASON = "用户没有填写原因"
 
-    # Use verb-led cancellation and timeout messages that cannot imply success.
+# Use verb-led cancellation and timeout messages that cannot imply success.
 CANCELLED_PREFIX = "已取消：用户手动终止了这次工具调用"
 TIMEOUT_PREFIX = "已超时：这次工具调用超过"
 

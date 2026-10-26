@@ -95,13 +95,21 @@ const PERMISSIONS: Record<
   Permission,
   { label: string; description: string; icon: typeof ShieldIcon }
 > = {
-  readonly: { label: "仅可查看", description: "只读，不改动文件", icon: ShieldIcon },
+  readonly: {
+    label: "仅可查看",
+    description: "只读，不改动文件",
+    icon: ShieldIcon,
+  },
   workspace: {
     label: "工作区内修改",
     description: "可写入当前工作区",
     icon: ShieldCheckIcon,
   },
-  full: { label: "完全权限", description: "不限制写入范围", icon: ShieldAlertIcon },
+  full: {
+    label: "完全权限",
+    description: "不限制写入范围",
+    icon: ShieldAlertIcon,
+  },
 };
 
 const COMMAND_ICONS = {
@@ -744,7 +752,9 @@ function MenuItem({
       content={
         <span className="flex flex-col gap-1">
           <span className="font-medium text-foreground">{title}</span>
-          {subtitle && <span className="text-muted-foreground">{subtitle}</span>}
+          {subtitle && (
+            <span className="text-muted-foreground">{subtitle}</span>
+          )}
         </span>
       }
     >
@@ -753,7 +763,9 @@ function MenuItem({
         onClick={onClick}
         className="flex w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-accent max-sm:px-3 max-sm:py-2.5"
       >
-        {icon && <span className="mt-0.5 shrink-0 text-muted-foreground">{icon}</span>}
+        {icon && (
+          <span className="mt-0.5 shrink-0 text-muted-foreground">{icon}</span>
+        )}
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-1 text-sm max-sm:text-[15px]">
             {title}

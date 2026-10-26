@@ -142,8 +142,9 @@ export function CoreConfigEditor() {
   );
   const unsafeTouched = useMemo(() => {
     if (!config) return 0;
-    return unsafeFields.filter((field) => config.values[field.path] !== draft[field.path])
-      .length;
+    return unsafeFields.filter(
+      (field) => config.values[field.path] !== draft[field.path],
+    ).length;
   }, [config, draft, unsafeFields]);
 
   /** Keys the installed AmritaCore no longer knows about. */
@@ -173,9 +174,7 @@ export function CoreConfigEditor() {
   }
 
   if (!config) {
-    return (
-      <p className="py-6 text-sm text-muted-foreground">无法读取配置</p>
-    );
+    return <p className="py-6 text-sm text-muted-foreground">无法读取配置</p>;
   }
 
   return (
@@ -193,11 +192,17 @@ export function CoreConfigEditor() {
                 配置文件里有 {removed.length} 项当前版本已不再使用
               </p>
               <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-                大多是因为 AmritaCore 升级后删掉或改名了这些字段。它们不会生效，也不会被自动删除——
+                大多是因为 AmritaCore
+                升级后删掉或改名了这些字段。它们不会生效，也不会被自动删除——
                 先确认下面的原始值你不再需要，再清理；否则可以按新名字重新填一遍。
               </p>
             </div>
-            <Button variant="outline" size="sm" onClick={prune} disabled={pruning}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={prune}
+              disabled={pruning}
+            >
               {pruning ? <Loader2Icon className="animate-spin" /> : null}
               清理
             </Button>
@@ -209,7 +214,10 @@ export function CoreConfigEditor() {
             className="flex items-center gap-1 self-start text-[11px] text-muted-foreground hover:text-foreground"
           >
             <ChevronDownIcon
-              className={cn("size-3 transition-transform", removedOpen && "rotate-180")}
+              className={cn(
+                "size-3 transition-transform",
+                removedOpen && "rotate-180",
+              )}
             />
             {removedOpen ? "收起原始值" : "查看原始值"}
           </button>
@@ -225,14 +233,16 @@ export function CoreConfigEditor() {
 
       {(config.missing?.length ?? 0) > 0 && removed.length === 0 && (
         <p className="text-[11px] text-muted-foreground">
-          有 {config.missing?.length} 项没有写进配置文件，正在使用当前版本的默认值（下方标有
-          「默认」）。
+          有 {config.missing?.length}{" "}
+          项没有写进配置文件，正在使用当前版本的默认值（下方标有 「默认」）。
         </p>
       )}
 
       {groupFields(safeFields).map(([group, fields]) => (
         <section key={group} className="flex flex-col gap-3">
-          <h3 className="text-sm font-medium">{GROUP_LABELS[group] ?? group}</h3>
+          <h3 className="text-sm font-medium">
+            {GROUP_LABELS[group] ?? group}
+          </h3>
           <div className="flex flex-col gap-3">
             {fields.map((field) => (
               <ConfigField
@@ -285,7 +295,9 @@ export function CoreConfigEditor() {
                 makes the hint click expand the section. */}
             <InfoHint label="Unsafe 选项说明" align="end" size="md">
               <span className="flex flex-col gap-1.5">
-                <span className="font-medium text-foreground">{UNSAFE_NOTE.title}</span>
+                <span className="font-medium text-foreground">
+                  {UNSAFE_NOTE.title}
+                </span>
                 <span>{UNSAFE_NOTE.body}</span>
               </span>
             </InfoHint>
@@ -293,14 +305,19 @@ export function CoreConfigEditor() {
 
           {unsafeOpen &&
             groupFields(unsafeFields).map(([group, fields]) => (
-              <div key={group} className="flex flex-col gap-3 border-t border-amber-500/25 pt-3">
+              <div
+                key={group}
+                className="flex flex-col gap-3 border-t border-amber-500/25 pt-3"
+              >
                 <h4 className="text-xs font-medium text-amber-700 dark:text-amber-400">
                   {GROUP_LABELS[group] ?? group}
                 </h4>
                 {group === "builtin" && (
                   <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
                     <span>{THINKING_NOTE.title}</span>
-                    <InfoHint label="思考方式说明">{THINKING_NOTE.body}</InfoHint>
+                    <InfoHint label="思考方式说明">
+                      {THINKING_NOTE.body}
+                    </InfoHint>
                   </div>
                 )}
                 {fields.map((field) => (

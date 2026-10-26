@@ -56,7 +56,13 @@ function MermaidCode({ code }: { code: string }) {
 }
 
 /** A fenced block with its own toolbar; ``pre`` is skipped (see ``code``). */
-function FencedCode({ className, children }: { className?: string; children?: ReactNode }) {
+function FencedCode({
+  className,
+  children,
+}: {
+  className?: string;
+  children?: ReactNode;
+}) {
   const streaming = useContext(StreamingContext);
   const language = /language-([\w+#-]+)/.exec(className ?? "")?.[1] ?? "";
   if (language === "mermaid") return <MermaidCode code={String(children)} />;
@@ -138,8 +144,14 @@ const maskedComponents: Components = {
   ...(Object.fromEntries(
     TEXT_TAGS.map((tag) => [
       tag,
-      ({ children, node: _node, ...props }: { children?: ReactNode; node?: unknown }) =>
-        createElement(tag, props, maskChildren(children)),
+      ({
+        children,
+        node: _node,
+        ...props
+      }: {
+        children?: ReactNode;
+        node?: unknown;
+      }) => createElement(tag, props, maskChildren(children)),
     ]),
   ) as Components),
   pre({ children }) {
@@ -204,7 +216,9 @@ export const Markdown = memo(function Markdown({
       >
         <ReactMarkdown
           remarkPlugins={[remarkGfm, remarkMath]}
-          rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false }]]}
+          rehypePlugins={[
+            [rehypeKatex, { throwOnError: false, strict: false }],
+          ]}
           components={maskSecrets ? maskedComponents : components}
         >
           {prepared}

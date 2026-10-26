@@ -180,7 +180,11 @@ function answerFor(prompt: string): string {
       "> 引用块的左边线应该跟着主题色走。",
     ].join("\n");
   }
-  if (text.includes("图") || text.includes("mermaid") || text.includes("flow")) {
+  if (
+    text.includes("图") ||
+    text.includes("mermaid") ||
+    text.includes("flow")
+  ) {
     return [
       "```mermaid",
       "flowchart LR",
@@ -247,7 +251,10 @@ export function startMockTurn({
 
   const reasoning = REASONING;
   reasoning.forEach((line, index) => {
-    schedule(() => onEvent({ type: "reasoning", text: `${line}\n` }), 120 * (index + 1));
+    schedule(
+      () => onEvent({ type: "reasoning", text: `${line}\n` }),
+      120 * (index + 1),
+    );
   });
 
   if (wantsTodoDemo(prompt)) {
@@ -451,7 +458,11 @@ export function startMockTurn({
       240,
     );
     schedule(
-      () => onEvent({ type: "delta", text: "已经跑了几次工具调用，正在收集中间结果…\n" }),
+      () =>
+        onEvent({
+          type: "delta",
+          text: "已经跑了几次工具调用，正在收集中间结果…\n",
+        }),
       300,
     );
     schedule(
@@ -480,7 +491,10 @@ export function startMockTurn({
           function_name: "mock_tool",
           is_done: false,
           tool_id: toolId,
-          arguments: JSON.stringify({ path: "src/amrita_core", pattern: "TODO" }),
+          arguments: JSON.stringify({
+            path: "src/amrita_core",
+            pattern: "TODO",
+          }),
         },
       }),
     460,
@@ -536,7 +550,12 @@ export function startMockTurn({
     () =>
       onEvent({
         type: "usage",
-        usage: { prompt_tokens: 42, completion_tokens: 180, total_tokens: 222, requests: 1 },
+        usage: {
+          prompt_tokens: 42,
+          completion_tokens: 180,
+          total_tokens: 222,
+          requests: 1,
+        },
       }),
     end,
   );
@@ -615,7 +634,8 @@ export function finishMockLimit({
         : "按优雅收尾处理：不再调用工具",
     metadata: {
       type: "system",
-      extra_type: action === "continue" ? "tool_limit_continue" : "tool_call_limit",
+      extra_type:
+        action === "continue" ? "tool_limit_continue" : "tool_call_limit",
     },
   });
   const text =

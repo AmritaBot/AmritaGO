@@ -64,9 +64,9 @@ export function PluginPanel({
   const [listing, setListing] = useState<WorkflowListing | null>(null);
   const [loading, setLoading] = useState(false);
   const [reloading, setReloading] = useState(false);
-  //: Name of the plugin whose settings drawer is open, if any.
+  // Name of the plugin whose settings drawer is open, if any.
   const [openConfig, setOpenConfig] = useState<string | null>(null);
-  //: Front-end test mode lives in localStorage; this mirrors it for the switch.
+  // Front-end test mode lives in localStorage; this mirrors it for the switch.
   const [mock, setMock] = useState(() => isMockMode());
 
   const reload = useCallback(async () => {
@@ -151,7 +151,12 @@ export function PluginPanel({
             <GitBranchIcon className="size-3.5" />
             工作流
           </span>
-          <Button variant="outline" size="sm" onClick={reloadPlugins} disabled={reloading}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={reloadPlugins}
+            disabled={reloading}
+          >
             {reloading ? (
               <Loader2Icon className="size-3.5 animate-spin" />
             ) : (
@@ -167,7 +172,8 @@ export function PluginPanel({
               {listing.active_agent_workflow ? (
                 <>
                   预设「{listing.active_agent}」固定为{" "}
-                  <code>{listing.active_agent_workflow}</code>，下面的切换对它无效
+                  <code>{listing.active_agent_workflow}</code>
+                  ，下面的切换对它无效
                 </>
               ) : (
                 <>
@@ -179,7 +185,8 @@ export function PluginPanel({
             <InfoHint label="工作流说明" align="end">
               <span className="flex flex-col gap-1.5">
                 <span>
-                  工作流由 Agent 预设决定：预设写了 <code>workflow</code> 就锁死，
+                  工作流由 Agent 预设决定：预设写了 <code>workflow</code>{" "}
+                  就锁死，
                   没写才跟随这里。所以这里只对「没有固定工作流」的预设生效。
                 </span>
                 <span>
@@ -329,82 +336,94 @@ export function PluginPanel({
             {(snapshot?.plugins ?? []).map((plugin) => {
               const enabled = plugin.enabled !== false;
               return (
-              <div
-                key={plugin.name}
-                className={cn(
-                  "flex flex-col gap-1 rounded-lg border border-border px-3 py-2",
-                  !enabled && "opacity-60",
-                )}
-              >
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="truncate font-medium">{plugin.name}</span>
-                  <code className="truncate text-[10px] text-muted-foreground">
-                    {plugin.module}
-                  </code>
-                  {enabled && plugin.loaded === false && (
-                    <span className="rounded bg-destructive/10 px-1 py-0.5 text-[10px] text-destructive">
-                      未加载
-                    </span>
+                <div
+                  key={plugin.name}
+                  className={cn(
+                    "flex flex-col gap-1 rounded-lg border border-border px-3 py-2",
+                    !enabled && "opacity-60",
                   )}
-                  {plugin.has_config && enabled && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="ml-auto h-6 px-2 text-[11px]"
-                      title={`打开 ${plugin.name} 的插件配置`}
-                      onClick={() =>
-                        setOpenConfig((prev) =>
-                          prev === plugin.name ? null : plugin.name,
-                        )
-                      }
-                    >
-                      <Settings2Icon className="size-3" />
-                      {openConfig === plugin.name ? "收起" : "配置"}
-                    </Button>
-                  )}
-                  {plugin.protected ? (
-                    // Show protected plugins as locked instead of offering a rejected toggle.
-                    <span
-                      className={cn(
-                        "flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground",
-                        !(plugin.has_config && enabled) && "ml-auto",
-                      )}
-                      title="这个插件是本应用的基础能力，不能停用"
-                    >
-                      <LockIcon className="size-3" />
-                      固定启用
-                    </span>
-                  ) : (
-                    <Switch
-                      // Align the switch to the row edge for consistent layout.
-                      className={cn(!(plugin.has_config && enabled) && "ml-auto")}
-                      checked={enabled}
-                      aria-label={`启用 ${plugin.name}`}
-                      title={
-                        enabled
-                          ? `停用 ${plugin.name}：它的工具、钩子与 MCP 提供方会消失`
-                          : `启用 ${plugin.name}：重新加载它的工具、钩子与 MCP 提供方`
-                      }
-                      onCheckedChange={(value) => void togglePlugin(plugin.name, value)}
-                    />
-                  )}
-                </div>
-                {plugin.description && (
-                  <p className="text-xs text-muted-foreground">{plugin.description}</p>
-                )}
-                <div className="flex flex-wrap gap-1 text-[10px] text-muted-foreground">
-                  {plugin.workflows.length > 0 && (
-                    <span>工作流：{plugin.workflows.join(", ")}</span>
-                  )}
-                  {plugin.tools.length > 0 && <span>工具源：{plugin.tools.join(", ")}</span>}
-                  {plugin.hooks.length > 0 && <span>钩子：{plugin.hooks.join(", ")}</span>}
-                </div>
-                {plugin.has_config && openConfig === plugin.name && enabled && (
-                  <div className="mt-2 border-t border-border pt-3">
-                    <PluginConfigForm plugin={plugin.name} />
+                >
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="truncate font-medium">{plugin.name}</span>
+                    <code className="truncate text-[10px] text-muted-foreground">
+                      {plugin.module}
+                    </code>
+                    {enabled && plugin.loaded === false && (
+                      <span className="rounded bg-destructive/10 px-1 py-0.5 text-[10px] text-destructive">
+                        未加载
+                      </span>
+                    )}
+                    {plugin.has_config && enabled && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="ml-auto h-6 px-2 text-[11px]"
+                        title={`打开 ${plugin.name} 的插件配置`}
+                        onClick={() =>
+                          setOpenConfig((prev) =>
+                            prev === plugin.name ? null : plugin.name,
+                          )
+                        }
+                      >
+                        <Settings2Icon className="size-3" />
+                        {openConfig === plugin.name ? "收起" : "配置"}
+                      </Button>
+                    )}
+                    {plugin.protected ? (
+                      // Show protected plugins as locked instead of offering a rejected toggle.
+                      <span
+                        className={cn(
+                          "flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground",
+                          !(plugin.has_config && enabled) && "ml-auto",
+                        )}
+                        title="这个插件是本应用的基础能力，不能停用"
+                      >
+                        <LockIcon className="size-3" />
+                        固定启用
+                      </span>
+                    ) : (
+                      <Switch
+                        // Align the switch to the row edge for consistent layout.
+                        className={cn(
+                          !(plugin.has_config && enabled) && "ml-auto",
+                        )}
+                        checked={enabled}
+                        aria-label={`启用 ${plugin.name}`}
+                        title={
+                          enabled
+                            ? `停用 ${plugin.name}：它的工具、钩子与 MCP 提供方会消失`
+                            : `启用 ${plugin.name}：重新加载它的工具、钩子与 MCP 提供方`
+                        }
+                        onCheckedChange={(value) =>
+                          void togglePlugin(plugin.name, value)
+                        }
+                      />
+                    )}
                   </div>
-                )}
-              </div>
+                  {plugin.description && (
+                    <p className="text-xs text-muted-foreground">
+                      {plugin.description}
+                    </p>
+                  )}
+                  <div className="flex flex-wrap gap-1 text-[10px] text-muted-foreground">
+                    {plugin.workflows.length > 0 && (
+                      <span>工作流：{plugin.workflows.join(", ")}</span>
+                    )}
+                    {plugin.tools.length > 0 && (
+                      <span>工具源：{plugin.tools.join(", ")}</span>
+                    )}
+                    {plugin.hooks.length > 0 && (
+                      <span>钩子：{plugin.hooks.join(", ")}</span>
+                    )}
+                  </div>
+                  {plugin.has_config &&
+                    openConfig === plugin.name &&
+                    enabled && (
+                      <div className="mt-2 border-t border-border pt-3">
+                        <PluginConfigForm plugin={plugin.name} />
+                      </div>
+                    )}
+                </div>
               );
             })}
             {(snapshot?.plugins ?? []).length === 0 && (
@@ -412,7 +431,8 @@ export function PluginPanel({
             )}
             {snapshot?.directory && (
               <p className="text-xs text-muted-foreground">
-                外部插件目录：<code className="break-all">{snapshot.directory}</code>
+                外部插件目录：
+                <code className="break-all">{snapshot.directory}</code>
               </p>
             )}
           </div>
@@ -424,7 +444,9 @@ export function PluginPanel({
             </span>
             <span>工具源 {(snapshot?.tools ?? []).length} 个</span>
             <span>MCP 提供者 {(snapshot?.mcp ?? []).length} 个</span>
-            <span>生命周期钩子 {(snapshot?.hooks ?? []).join(", ") || "无"}</span>
+            <span>
+              生命周期钩子 {(snapshot?.hooks ?? []).join(", ") || "无"}
+            </span>
           </div>
         </>
       )}

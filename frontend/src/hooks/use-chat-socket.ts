@@ -114,7 +114,10 @@ interface Pending {
 function appendReasoning(trace: TraceEntry[], text: string): TraceEntry[] {
   const last = trace.at(-1);
   if (last?.kind === "reasoning") {
-    return [...trace.slice(0, -1), { kind: "reasoning", text: last.text + text }];
+    return [
+      ...trace.slice(0, -1),
+      { kind: "reasoning", text: last.text + text },
+    ];
   }
   return [...trace, { kind: "reasoning", text }];
 }
@@ -128,25 +131,29 @@ export function useChatSocket(sessionId: string | null) {
   const [liveUsage, setLiveUsage] = useState<LiveUsage | null>(null);
   const [totals, setTotals] = useState<UsageTotals | null>(null);
   const [lastUsage, setLastUsage] = useState<TurnUsage | null>(null);
-  //: Parallel confirmations remain pending until each is answered.
+  // Parallel confirmations remain pending until each is answered.
   const [pendingConfirms, setPendingConfirms] = useState<ConfirmRequest[]>([]);
-  //: The run spent its tool budget and is parked until this is answered.
-  const [limitRequest, setLimitRequest] = useState<ToolLimitRequest | null>(null);
-  //: Track cancellable tools by ID while they are running.
-  const [runningTools, setRunningTools] = useState<Record<string, RunningTool>>({});
+  // The run spent its tool budget and is parked until this is answered.
+  const [limitRequest, setLimitRequest] = useState<ToolLimitRequest | null>(
+    null,
+  );
+  // Track cancellable tools by ID while they are running.
+  const [runningTools, setRunningTools] = useState<Record<string, RunningTool>>(
+    {},
+  );
   const [todos, setTodos] = useState<TodoList | null>(null);
-  //: Count messages carried into the next request.
+  // Count messages carried into the next request.
   const [contextMessages, setContextMessages] = useState<number | null>(null);
   const startedAtRef = useRef<number | null>(null);
   const firstDeltaRef = useRef<number | null>(null);
-  //: Accumulate reasoning intervals because reasoning and answers interleave.
+  // Accumulate reasoning intervals because reasoning and answers interleave.
   const thinkStartRef = useRef<number | null>(null);
   const thinkTotalRef = useRef(0);
 
   const socketRef = useRef<WebSocket | null>(null);
   const pendingRef = useRef<Pending>({ text: "", reasoning: "" });
   const timerRef = useRef<number | null>(null);
-  //: Pending timers of a front-end test-mode turn, so ``stop()`` can cancel it.
+  // Pending timers of a front-end test-mode turn, so ``stop()`` can cancel it.
   const mockTimers = useRef<number[]>([]);
   const activeIdRef = useRef<string | null>(null);
   const streamIdRef = useRef<string | null>(null);
@@ -154,7 +161,7 @@ export function useChatSocket(sessionId: string | null) {
   const manualClose = useRef(false);
   const sessionRef = useRef<string | null>(sessionId);
   const retryRef = useRef<number | null>(null);
-  //: Mirror messages so callbacks can read the latest value.
+  // Mirror messages so callbacks can read the latest value.
   const messagesRef = useRef<ChatMessage[]>([]);
 
   sessionRef.current = sessionId;
@@ -296,7 +303,8 @@ export function useChatSocket(sessionId: string | null) {
   const handleEvent = useCallback(
     (event: StreamEvent) => {
       switch (event.type) {
-        case "start": {          streamIdRef.current = event.stream_id;
+        case "start": {
+          streamIdRef.current = event.stream_id;
           setStreamId(event.stream_id);
           setPlan({
             agent: event.agent,
@@ -348,13 +356,15 @@ export function useChatSocket(sessionId: string | null) {
           ensureAssistant();
           // The answer started (or resumed): whatever ran before it was thinking.
           settleThinking();
-          if (firstDeltaRef.current === null) firstDeltaRef.current = Date.now();
+          if (firstDeltaRef.current === null)
+            firstDeltaRef.current = Date.now();
           pushDelta(event.text, "text");
           break;
         }
         case "reasoning": {
           ensureAssistant();
-          if (thinkStartRef.current === null) thinkStartRef.current = Date.now();
+          if (thinkStartRef.current === null)
+            thinkStartRef.current = Date.now();
           pushDelta(event.text, "reasoning");
           break;
         }
@@ -371,7 +381,11 @@ export function useChatSocket(sessionId: string | null) {
                     events: [...message.events, payload],
                     trace: [
                       ...message.trace,
-                      { kind: "event", content: event.content, metadata: event.metadata },
+                      {
+                        kind: "event",
+                        content: event.content,
+                        metadata: event.metadata,
+                      },
                     ],
                   }
                 : message,
@@ -605,7 +619,9 @@ export function useChatSocket(sessionId: string | null) {
         setContextMessages(usage?.context?.messages ?? null);
         setMessages(
           entries
-            .filter((entry) => entry.role === "user" || entry.role === "assistant")
+            .filter(
+              (entry) => entry.role === "user" || entry.role === "assistant",
+            )
             .map((entry) => ({
               id: entry.id,
               role: entry.role as "user" | "assistant",
@@ -657,7 +673,8 @@ export function useChatSocket(sessionId: string | null) {
   }, [connect, disconnect, loadSession, sessionId]);
 
   // Reset + reconnect whenever the session changes.
-  useEffect(() => {    disconnect();
+  useEffect(() => {
+    disconnect();
     if (!sessionId) {
       setMessages([]);
       return;
@@ -701,7 +718,8 @@ export function useChatSocket(sessionId: string | null) {
       access?: string | null,
     ) => {
       const text = message.trim();
-      if ((!text && attachments.length === 0) || !sessionId || busy) return false;
+      if ((!text && attachments.length === 0) || !sessionId || busy)
+        return false;
       const mock = isMockMode();
       const socket = socketRef.current;
       if (!mock && (!socket || socket.readyState !== WebSocket.OPEN)) {
@@ -803,7 +821,8 @@ export function useChatSocket(sessionId: string | null) {
         break;
       }
     }
-    if (!prompt || (!prompt.content && !prompt.attachments?.length)) return false;
+    if (!prompt || (!prompt.content && !prompt.attachments?.length))
+      return false;
 
     const failedId = list[failed].id;
     setMessages((prev) => prev.filter((message) => message.id !== failedId));
@@ -818,15 +837,25 @@ export function useChatSocket(sessionId: string | null) {
    * should be told its command was changed.
    */
   const sendConfirm = useCallback(
-    (requestId: string, approved: boolean, command?: string, reason?: string) => {
-      const request = pendingConfirms.find((item) => item.request_id === requestId);
+    (
+      requestId: string,
+      approved: boolean,
+      command?: string,
+      reason?: string,
+    ) => {
+      const request = pendingConfirms.find(
+        (item) => item.request_id === requestId,
+      );
       if (!request) return;
       // Remove the answered request immediately to prevent duplicate replies.
-      setPendingConfirms((prev) => prev.filter((item) => item.request_id !== requestId));
+      setPendingConfirms((prev) =>
+        prev.filter((item) => item.request_id !== requestId),
+      );
       if (isMockConfirm(request.request_id)) {
         // Exercise mock confirmation outcomes and end the turn after the final answer.
         const others = pendingConfirms.filter(
-          (item) => item.request_id !== requestId && isMockConfirm(item.request_id),
+          (item) =>
+            item.request_id !== requestId && isMockConfirm(item.request_id),
         ).length;
         finishMockAudit({
           onEvent: handleEvent,

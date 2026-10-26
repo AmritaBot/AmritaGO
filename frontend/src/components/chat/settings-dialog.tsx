@@ -186,7 +186,8 @@ export function SettingsDialog({
   };
 
   const skillEnabled = (name: string) =>
-    settings?.enabled_skills === null || settings?.enabled_skills.includes(name);
+    settings?.enabled_skills === null ||
+    settings?.enabled_skills.includes(name);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -199,8 +200,8 @@ export function SettingsDialog({
         <DialogHeader>
           <DialogTitle>设置</DialogTitle>
           <DialogDescription>
-            配置保存在 <code>~/.amrita</code>，API Key 加密存储；项目技能放在工作区的{" "}
-            <code>.amrita/skills</code>。
+            配置保存在 <code>~/.amrita</code>，API Key
+            加密存储；项目技能放在工作区的 <code>.amrita/skills</code>。
           </DialogDescription>
         </DialogHeader>
 
@@ -244,7 +245,10 @@ export function SettingsDialog({
               />
             </TabsContent>
 
-            <TabsContent value="agents" className="min-h-0 flex-1 overflow-hidden">
+            <TabsContent
+              value="agents"
+              className="min-h-0 flex-1 overflow-hidden"
+            >
               <AgentEditor
                 agents={agents}
                 workflows={workflows}
@@ -265,7 +269,9 @@ export function SettingsDialog({
               )}
             </TabsContent>
 
-            <TabsContent value="tools" className="flex min-h-0 flex-1 flex-col">              <ToolPool
+            <TabsContent value="tools" className="flex min-h-0 flex-1 flex-col">
+              {" "}
+              <ToolPool
                 onSaved={() => {
                   void reload();
                 }}
@@ -276,7 +282,10 @@ export function SettingsDialog({
               <CoreConfigEditor />
             </TabsContent>
 
-            <TabsContent value="skills" className={cn(PANEL_SCROLL, "flex flex-col gap-2")}>
+            <TabsContent
+              value="skills"
+              className={cn(PANEL_SCROLL, "flex flex-col gap-2")}
+            >
               <div className="flex flex-col gap-1 text-xs text-muted-foreground">
                 <p>技能目录（工作区优先）：</p>
                 {skillDirs.map((dir) => (
@@ -308,7 +317,9 @@ export function SettingsDialog({
                         ? `关闭 ${skill.name}：它的说明不再注入到系统提示词`
                         : `启用 ${skill.name}：把它的说明注入到系统提示词`
                     }
-                    onCheckedChange={(checked) => toggleSkill(skill.name, checked)}
+                    onCheckedChange={(checked) =>
+                      toggleSkill(skill.name, checked)
+                    }
                   />
                 </div>
               ))}
@@ -317,7 +328,10 @@ export function SettingsDialog({
               )}
             </TabsContent>
 
-            <TabsContent value="mcp" className={cn(PANEL_SCROLL, "flex flex-col gap-3")}>
+            <TabsContent
+              value="mcp"
+              className={cn(PANEL_SCROLL, "flex flex-col gap-3")}
+            >
               {servers.map((server) => (
                 <div
                   key={server.name}
@@ -368,7 +382,9 @@ export function SettingsDialog({
                     </div>
                   </div>
                   {server.error && (
-                    <p className="break-all text-xs text-destructive">{server.error}</p>
+                    <p className="break-all text-xs text-destructive">
+                      {server.error}
+                    </p>
                   )}
                   {server.tools.length > 0 && (
                     <p className="text-xs text-muted-foreground">
@@ -385,7 +401,10 @@ export function SettingsDialog({
                     id="mcp-name"
                     value={mcpDraft.name}
                     onChange={(event) =>
-                      setMcpDraft((prev) => ({ ...prev, name: event.target.value }))
+                      setMcpDraft((prev) => ({
+                        ...prev,
+                        name: event.target.value,
+                      }))
                     }
                     placeholder="filesystem"
                   />
@@ -417,7 +436,9 @@ export function SettingsDialog({
                 onDebugChange={async (value) => {
                   const saved = await api.patchSettings({ debug: value });
                   setSettings(saved);
-                  toast.success(value ? "已开启开发者模式" : "已关闭开发者模式");
+                  toast.success(
+                    value ? "已开启开发者模式" : "已关闭开发者模式",
+                  );
                 }}
               />
             </TabsContent>

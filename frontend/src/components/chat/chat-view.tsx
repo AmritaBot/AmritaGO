@@ -145,7 +145,9 @@ const THINKING_QUIPS = ["思考中…", "Amria还在…", "正在玩 MC…", "�
 
 function pickThinkingLabel(): string {
   if (Math.random() > 0.15) return THINKING_QUIPS[0];
-  return THINKING_QUIPS[1 + Math.floor(Math.random() * (THINKING_QUIPS.length - 1))];
+  return THINKING_QUIPS[
+    1 + Math.floor(Math.random() * (THINKING_QUIPS.length - 1))
+  ];
 }
 
 /** Placeholder shown between "send" and the first token. */
@@ -190,7 +192,10 @@ function UserMessageBody({ content }: { content: string }) {
       <div className="relative w-full overflow-hidden rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-primary-foreground shadow-sm">
         <div
           ref={body}
-          className={cn("md md-user", hidden && "max-h-[22rem] overflow-hidden")}
+          className={cn(
+            "md md-user",
+            hidden && "max-h-[22rem] overflow-hidden",
+          )}
         >
           <Markdown content={content} maskSecrets />
         </div>
@@ -244,7 +249,9 @@ function MessageBubble({
     const images = (message.attachments ?? []).filter(
       (item) => item.kind === "image" && item.url,
     );
-    const files = (message.attachments ?? []).filter((item) => item.kind !== "image");
+    const files = (message.attachments ?? []).filter(
+      (item) => item.kind !== "image",
+    );
     return (
       <div className="group flex flex-col items-end gap-1.5">
         {images.length > 0 && (
@@ -307,76 +314,83 @@ function MessageBubble({
 
   return (
     <div className="group min-w-0">
-        {/* Thinking and tool calls are one timeline: the order is the
+      {/* Thinking and tool calls are one timeline: the order is the
             information, so neither is hoisted above the answer. */}
-        <Trace
-          message={message}
-          streaming={message.streaming}
-          runningTools={runningTools}
-          onCancelTool={onCancelTool}
-        />
+      <Trace
+        message={message}
+        streaming={message.streaming}
+        runningTools={runningTools}
+        onCancelTool={onCancelTool}
+      />
 
-        {message.content ? (
-          <Markdown content={message.content} streaming={message.streaming} />
-        ) : message.streaming ? (
-          <ThinkingIndicator />
-        ) : null}
+      {message.content ? (
+        <Markdown content={message.content} streaming={message.streaming} />
+      ) : message.streaming ? (
+        <ThinkingIndicator />
+      ) : null}
 
-        {message.error && (
-          <div className="mt-2 flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-            <CircleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="break-all whitespace-pre-wrap">{message.error}</p>
-              {onRetry && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-2 h-7 gap-1 border-destructive/40 bg-background px-2 text-[11px] text-foreground hover:bg-muted"
-                  onClick={onRetry}
-                  title="重新发送上一次的提问"
-                >
-                  <RotateCcwIcon className="size-3" />
-                  重试
-                </Button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {!message.streaming && message.content && (
-          <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
-            {message.usage?.total_tokens ? (
-              <span className="inline-flex items-center gap-1">
-                <DatabaseIcon className="size-3" />
-                {message.usage.total_tokens} tok
-                {message.usage.tokens_per_second
-                  ? ` · ${message.usage.tokens_per_second} tok/s`
-                  : ""}
-                {message.usage.rounds > 1 ? ` · ${message.usage.rounds} 次请求` : ""}
-                {message.usage.tool_calls > 0
-                  ? ` · ${message.usage.tool_calls} 工具`
-                  : ""}
-              </span>
-            ) : null}
-            <span className="ml-auto flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 max-sm:opacity-100">
-              {onBranch && (
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => onBranch(message.id)}
-                  aria-label="从这里分叉"
-                  title="从这里分叉：新会话保留到这条消息为止"
-                >
-                  <GitBranchIcon className="size-3.5" />
-                </Button>
-              )}
-              <Button variant="ghost" size="icon-sm" onClick={copy} aria-label="复制">
-                <CopyIcon className="size-3.5" />
+      {message.error && (
+        <div className="mt-2 flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          <CircleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="break-all whitespace-pre-wrap">{message.error}</p>
+            {onRetry && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2 h-7 gap-1 border-destructive/40 bg-background px-2 text-[11px] text-foreground hover:bg-muted"
+                onClick={onRetry}
+                title="重新发送上一次的提问"
+              >
+                <RotateCcwIcon className="size-3" />
+                重试
               </Button>
-              {copied && <span>已复制</span>}
-            </span>
+            )}
           </div>
-        )}
+        </div>
+      )}
+
+      {!message.streaming && message.content && (
+        <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+          {message.usage?.total_tokens ? (
+            <span className="inline-flex items-center gap-1">
+              <DatabaseIcon className="size-3" />
+              {message.usage.total_tokens} tok
+              {message.usage.tokens_per_second
+                ? ` · ${message.usage.tokens_per_second} tok/s`
+                : ""}
+              {message.usage.rounds > 1
+                ? ` · ${message.usage.rounds} 次请求`
+                : ""}
+              {message.usage.tool_calls > 0
+                ? ` · ${message.usage.tool_calls} 工具`
+                : ""}
+            </span>
+          ) : null}
+          <span className="ml-auto flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 max-sm:opacity-100">
+            {onBranch && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => onBranch(message.id)}
+                aria-label="从这里分叉"
+                title="从这里分叉：新会话保留到这条消息为止"
+              >
+                <GitBranchIcon className="size-3.5" />
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={copy}
+              aria-label="复制"
+            >
+              <CopyIcon className="size-3.5" />
+            </Button>
+            {copied && <span>已复制</span>}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -418,8 +432,9 @@ function ToolLimitCard({
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">继续迭代？</p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              本轮的 LLM 请求预算（{budget} 次）已经用完，Agent 停在这里等你决定。
-              继续会在<strong>本轮</strong>内追加 {extension} 次 LLM 请求，模型带着现有上下文接着做；
+              本轮的 LLM 请求预算（{budget} 次）已经用完，Agent
+              停在这里等你决定。 继续会在<strong>本轮</strong>内追加 {extension}{" "}
+              次 LLM 请求，模型带着现有上下文接着做；
               优雅收尾让模型把已经查到的东西写完；直接中断则立刻停在这里，
               不再让模型多发一次请求。
               {timeout > 0 &&
@@ -467,6 +482,7 @@ export function ChatView({
   models,
   activeAgent,
   activeModel,
+  contextVersion = 0,
   onSelectWorkspace,
   onAddWorkspace,
   onSelectAgent,
@@ -484,6 +500,8 @@ export function ChatView({
   models: ModelOption[];
   activeAgent: string;
   activeModel: string | null;
+  /** Changes when settings close; re-runs fetches this view only does once. */
+  contextVersion?: number;
   onSelectWorkspace: (path: string) => void;
   onAddWorkspace: () => void;
   onSelectAgent: (name: string) => void;
@@ -519,9 +537,9 @@ export function ChatView({
     cancelTool,
   } = useChatSocketFor(sessionId);
   const [permission, setPermission] = useState<Permission>("workspace");
-  //: The tool call the user asked to cancel; the dialog collects the reason.
+  // The tool call the user asked to cancel; the dialog collects the reason.
   const [cancelTarget, setCancelTarget] = useState<RunningTool | null>(null);
-  //: Fetch backend commands so plugin commands need no frontend changes.
+  // Fetch backend commands so plugin commands need no frontend changes.
   const [commands, setCommands] = useState<CommandOption[]>([]);
   const [pending, setPending] = useState<PendingAttachment[]>([]);
   const [uploading, setUploading] = useState(0);
@@ -665,7 +683,8 @@ export function ChatView({
     return () => {
       cancelled = true;
     };
-  }, []);
+    // Plugins and skills are edited in settings; re-read when that page closes.
+  }, [contextVersion]);
 
   // Report this session's busy state; App polls background sessions.
   useEffect(() => {

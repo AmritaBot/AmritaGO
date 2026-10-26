@@ -118,7 +118,9 @@ await copyBrand();
 // A stylesheet must exist; a missing CSS link silently produces an unstyled app.
 const hasCss = result.outputs.some((output) => output.path.endsWith(".css"));
 if (!hasCss) {
-  console.error("No CSS was emitted - check that index.html links src/styles.css");
+  console.error(
+    "No CSS was emitted - check that index.html links src/styles.css",
+  );
 }
 
 const rows = result.outputs
@@ -130,4 +132,6 @@ const rows = result.outputs
   .sort((a, b) => b.Size.length - a.Size.length);
 
 console.table(rows);
-console.log(`\nBuild completed in ${(performance.now() - start).toFixed(0)}ms\n`);
+console.log(
+  `\nBuild completed in ${(performance.now() - start).toFixed(0)}ms\n`,
+);

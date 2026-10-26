@@ -470,7 +470,12 @@ export interface RunningTool {
 }
 
 /** How a call ended, as reported by the server. */
-export type ToolOutcome = "done" | "failed" | "cancelled" | "timeout" | "aborted";
+export type ToolOutcome =
+  | "done"
+  | "failed"
+  | "cancelled"
+  | "timeout"
+  | "aborted";
 
 export interface Workspace {
   name: string;
@@ -502,7 +507,12 @@ export interface CoreConfigField {
   description: string;
   doc?: string;
   default: unknown;
-  constraints: { min?: number; max?: number; exclusive_min?: number; exclusive_max?: number };
+  constraints: {
+    min?: number;
+    max?: number;
+    exclusive_min?: number;
+    exclusive_max?: number;
+  };
   /** Changes how the agent behaves, not just cost/latency — shown separately. */
   unsafe?: boolean;
   unsafe_reason?: string | null;
@@ -890,7 +900,10 @@ export const api = {
    * ``undefined`` leaves a field alone, so the two switchers can update the
    * session independently of each other.
    */
-  setSessionConfig: (id: string, config: { workspace?: string; agent?: string }) =>
+  setSessionConfig: (
+    id: string,
+    config: { workspace?: string; agent?: string },
+  ) =>
     request<SessionMeta>(`/sessions/${id}/config`, {
       method: "POST",
       body: JSON.stringify(config),

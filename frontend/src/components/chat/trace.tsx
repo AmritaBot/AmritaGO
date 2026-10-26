@@ -54,15 +54,23 @@ interface ToolCall {
 type Item =
   | { kind: "reasoning"; key: string; text: string }
   | { kind: "tool"; key: string; call: ToolCall }
-  | { kind: "notice"; key: string; content: string; metadata: Record<string, unknown> };
+  | {
+      kind: "notice";
+      key: string;
+      content: string;
+      metadata: Record<string, unknown>;
+    };
 
 /** Is this event part of a tool call (rather than a step or a notice)? */
-function toolNameOf(event: { metadata: Record<string, unknown> }): string | null {
+function toolNameOf(event: {
+  metadata: Record<string, unknown>;
+}): string | null {
   const kind = String(event.metadata.type ?? "");
   if (kind === "function_call" || kind === "tool_call") {
     return String(event.metadata.function_name ?? "") || "tool";
   }
-  if (kind === "skill_call") {
+  // Treat skill_call as a tool row only when it has its own tool_id; otherwise it is a notice.
+  if (kind === "skill_call" && event.metadata.tool_id) {
     return String(event.metadata.skill_name ?? "") || "skill";
   }
   return null;
@@ -92,7 +100,8 @@ function describeArgs(event: MetaEvent): string | null {
 function foldCall(call: ToolCall, event: MetaEvent): ToolCall {
   const done = event.metadata.is_done === true;
   const error = event.metadata.err == null ? null : String(event.metadata.err);
-  const result = typeof event.metadata.result === "string" ? event.metadata.result : null;
+  const result =
+    typeof event.metadata.result === "string" ? event.metadata.result : null;
   // Keep cancelled and timed-out calls from being relabeled as completed.
   const settled = call.status === "cancelled" || call.status === "timeout";
   return {
@@ -104,7 +113,7 @@ function foldCall(call: ToolCall, event: MetaEvent): ToolCall {
     status: settled
       ? call.status
       : call.finished || done
-        ? call.error ?? error
+        ? (call.error ?? error)
           ? "failed"
           : "done"
         : "running",
@@ -112,7 +121,9 @@ function foldCall(call: ToolCall, event: MetaEvent): ToolCall {
 }
 
 /** Notices that say a call was cut short, and which call they belong to. */
-function interruptedStatus(metadata: Record<string, unknown>): ToolCall["status"] | null {
+function interruptedStatus(
+  metadata: Record<string, unknown>,
+): ToolCall["status"] | null {
   const extra = String(metadata.extra_type ?? "");
   if (extra === "tool_cancelled") return "cancelled";
   if (extra === "tool_timeout") return "timeout";
@@ -192,21 +203,29 @@ function snippet(text: string, limit = 90): string {
 
 function StatusIcon({ status }: { status: ToolCall["status"] }) {
   if (status === "running") {
-    return <Loader2Icon className="size-3.5 animate-spin text-muted-foreground" />;
+    return (
+      <Loader2Icon className="size-3.5 animate-spin text-muted-foreground" />
+    );
   }
   if (status === "failed") {
     return <CircleAlertIcon className="size-3.5 text-destructive" />;
   }
   if (status === "cancelled") {
-    return <CircleSlashIcon className="size-3.5 text-amber-600 dark:text-amber-400" />;
+    return (
+      <CircleSlashIcon className="size-3.5 text-amber-600 dark:text-amber-400" />
+    );
   }
   if (status === "timeout") {
-    return <TimerIcon className="size-3.5 text-amber-600 dark:text-amber-400" />;
+    return (
+      <TimerIcon className="size-3.5 text-amber-600 dark:text-amber-400" />
+    );
   }
   if (status === "unknown") {
     return <HelpCircleIcon className="size-3.5 text-muted-foreground" />;
   }
-  return <CheckIcon className="size-3.5 text-emerald-600 dark:text-emerald-400" />;
+  return (
+    <CheckIcon className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+  );
 }
 
 function Row({
@@ -346,15 +365,20 @@ function ToolRow({
       onToggle={() => setOpen((prev) => !prev)}
       label={
         <span className="flex min-w-0 items-center gap-2">
-          <span className="shrink-0 text-muted-foreground">已运行</span>
+          {/* Name first: the arguments alone do not say which tool produced them. */}
           <code
             className={cn(
-              "min-w-0 truncate rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]",
+              "shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]",
               call.status === "failed" && "text-destructive",
             )}
           >
-            {call.args ? snippet(call.args, 100) : call.name}
+            {call.name}
           </code>
+          {call.args && (
+            <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">
+              {snippet(call.args, 100)}
+            </span>
+          )}
           <span
             className={cn(
               "shrink-0 text-[11px]",
@@ -404,7 +428,11 @@ function ToolRow({
         {running && (
           <div className="flex gap-2 text-[11px] text-muted-foreground">
             <span className="shrink-0">超时</span>
-            <span>{running.timeout > 0 ? `${running.timeout} 秒后自动终止` : "不限制"}</span>
+            <span>
+              {running.timeout > 0
+                ? `${running.timeout} 秒后自动终止`
+                : "不限制"}
+            </span>
           </div>
         )}
         {call.args && (
@@ -600,7 +628,9 @@ export function Trace({
               key={item.key}
               call={item.call}
               running={live}
-              onCancel={live && onCancelTool ? () => onCancelTool(live) : undefined}
+              onCancel={
+                live && onCancelTool ? () => onCancelTool(live) : undefined
+              }
             />
           );
         }
@@ -609,7 +639,10 @@ export function Trace({
         return (
           <div key={item.key} className="px-1.5 py-1">
             {extra.startsWith("compaction_") ? (
-              <CompactionNotice content={item.content} metadata={item.metadata} />
+              <CompactionNotice
+                content={item.content}
+                metadata={item.metadata}
+              />
             ) : (
               <NoticePill content={item.content} metadata={item.metadata} />
             )}

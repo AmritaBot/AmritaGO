@@ -21,7 +21,12 @@
  */
 
 import { useState } from "react";
-import { AlertTriangleIcon, CheckIcon, SquareTerminalIcon, XIcon } from "lucide-react";
+import {
+  AlertTriangleIcon,
+  CheckIcon,
+  SquareTerminalIcon,
+  XIcon,
+} from "lucide-react";
 
 import { AnsiText } from "@/components/ui/ansi-text";
 import { Button } from "@/components/ui/button";
@@ -34,7 +39,12 @@ export function AuditPanel({
   onSubmit,
 }: {
   requests: ConfirmRequest[];
-  onSubmit: (requestId: string, approved: boolean, command?: string, reason?: string) => void;
+  onSubmit: (
+    requestId: string,
+    approved: boolean,
+    command?: string,
+    reason?: string,
+  ) => void;
 }) {
   if (requests.length === 0) return null;
   return (
@@ -55,7 +65,11 @@ export function AuditPanel({
         </div>
         <div className="flex max-h-[46vh] flex-col gap-3 overflow-y-auto p-3">
           {requests.map((request) => (
-            <ConfirmCard key={request.request_id} request={request} onSubmit={onSubmit} />
+            <ConfirmCard
+              key={request.request_id}
+              request={request}
+              onSubmit={onSubmit}
+            />
           ))}
         </div>
       </div>
@@ -75,7 +89,12 @@ function ConfirmCard({
   onSubmit,
 }: {
   request: ConfirmRequest;
-  onSubmit: (requestId: string, approved: boolean, command?: string, reason?: string) => void;
+  onSubmit: (
+    requestId: string,
+    approved: boolean,
+    command?: string,
+    reason?: string,
+  ) => void;
 }) {
   const [command, setCommand] = useState(request.command);
   const [reason, setReason] = useState("");
@@ -97,9 +116,13 @@ function ConfirmCard({
           {request.cwd}
         </span>
         {edited && (
-          <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-600">已修改</span>
+          <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-600">
+            已修改
+          </span>
         )}
-        {request.hint && <InfoHint label="这次确认的说明">{request.hint}</InfoHint>}
+        {request.hint && (
+          <InfoHint label="这次确认的说明">{request.hint}</InfoHint>
+        )}
       </div>
 
       <textarea
@@ -151,7 +174,12 @@ function ConfirmCard({
           <XIcon />
           拒绝
         </Button>
-        <Button size="sm" onClick={approve} disabled={empty} aria-label="批准执行">
+        <Button
+          size="sm"
+          onClick={approve}
+          disabled={empty}
+          aria-label="批准执行"
+        >
           <CheckIcon />
           批准执行
         </Button>

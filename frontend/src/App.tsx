@@ -1,5 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { MonitorIcon, MoonIcon, PlusIcon, PanelLeftIcon, SunIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  MonitorIcon,
+  MoonIcon,
+  PanelLeftIcon,
+  PencilIcon,
+  SunIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { ChatView } from "@/components/chat/chat-view";
@@ -9,7 +15,13 @@ import type { SettingsTab } from "@/components/chat/settings-dialog";
 import { Button } from "@/components/ui/button";
 import { PromptDialog } from "@/components/ui/prompt-dialog";
 import { useTheme } from "@/hooks/use-theme";
-import { api, type AgentPreset, type ModelOption, type SessionMeta, type Workspace } from "@/lib/api";
+import {
+  api,
+  type AgentPreset,
+  type ModelOption,
+  type SessionMeta,
+  type Workspace,
+} from "@/lib/api";
 import { APP_VERSION, loadAppVersion } from "@/lib/version";
 import { cn } from "@/lib/utils";
 
@@ -34,8 +46,14 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("providers");
+  // Bumped when the settings page closes so children re-read what they cached.
+  const [contextVersion, setContextVersion] = useState(0);
   const [booting, setBooting] = useState(true);
   const [appVersion, setAppVersion] = useState(APP_VERSION);
+  // The header title is editable in place; the sidebar row edits itself.
+  const [renaming, setRenaming] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const renameCancelled = useRef(false);
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [activeWorkspace, setActiveWorkspace] = useState<string | null>(null);
@@ -44,7 +62,7 @@ export default function App() {
   const [activeAgent, setActiveAgent] = useState("standard");
   const [models, setModels] = useState<ModelOption[]>([]);
   const [activeModel, setActiveModel] = useState<string | null>(null);
-  //: Track live sessions separately so stale rows retain their running indicator.
+  // Track live sessions separately so stale rows retain their running indicator.
   const [runningIds, setRunningIds] = useState<string[]>([]);
 
   const markRunning = useCallback((id: string, value: boolean) => {
@@ -63,7 +81,9 @@ export default function App() {
     setSessions(live.sessions);
     setArchived(stored.sessions.filter((session) => session.archived));
     // Restore running indicators from the server after reloads.
-    setRunningIds(live.sessions.filter((session) => session.running).map((s) => s.id));
+    setRunningIds(
+      live.sessions.filter((session) => session.running).map((s) => s.id),
+    );
     return live.sessions;
   };
 
@@ -74,18 +94,31 @@ export default function App() {
       api.listProviders(),
     ]);
     setWorkspaces(workspaceList.workspaces);
-    setActiveWorkspace(workspaceList.active ?? workspaceList.workspaces[0]?.path ?? null);
-      // Add the built-in fallback only when the agent list omits it.
-      setAgents(
-        agentList.agents.some((agent) => agent.name === agentList.builtin.name)
-          ? agentList.agents
-          : [agentList.builtin, ...agentList.agents],
-      );
+    setActiveWorkspace(
+      workspaceList.active ?? workspaceList.workspaces[0]?.path ?? null,
+    );
+    // Add the built-in fallback only when the agent list omits it.
+    setAgents(
+      agentList.agents.some((agent) => agent.name === agentList.builtin.name)
+        ? agentList.agents
+        : [agentList.builtin, ...agentList.agents],
+    );
     setActiveAgent(agentList.active ?? "standard");
     setModels(providerList.models);
-    setActiveModel(
-      providerList.active ?? providerList.models[0]?.key ?? null,
-    );
+    setActiveModel(providerList.active ?? providerList.models[0]?.key ?? null);
+  };
+
+  /**
+   * Settings is a full-screen page rather than a floating dialog: the model
+   * list, presets, workspaces and plugin commands it edits all feed the chat
+   * chrome behind it. Re-read them on the way out, so the composer shows what
+   * was just saved instead of the list it cached at boot.
+   */
+  const handleSettingsOpenChange = (open: boolean) => {
+    setSettingsOpen(open);
+    if (open) return;
+    setContextVersion((prev) => prev + 1);
+    void refreshContext().catch((error) => console.error(error));
   };
 
   useEffect(() => {
@@ -149,7 +182,11 @@ export default function App() {
       setSessions((prev) =>
         prev.map((session) =>
           session.id === detail.sessionId
-            ? { ...session, usage: detail.totals, updated_at: Date.now() / 1000 }
+            ? {
+                ...session,
+                usage: detail.totals,
+                updated_at: Date.now() / 1000,
+              }
             : session,
         ),
       );
@@ -172,12 +209,16 @@ export default function App() {
         .listSessions()
         .then((live) => {
           setRunningIds(
-            live.sessions.filter((session) => session.running).map((session) => session.id),
+            live.sessions
+              .filter((session) => session.running)
+              .map((session) => session.id),
           );
           // Token counts and titles move with a background run too.
           setSessions((prev) =>
             prev.map((session) => {
-              const fresh = live.sessions.find((item) => item.id === session.id);
+              const fresh = live.sessions.find(
+                (item) => item.id === session.id,
+              );
               return fresh ? { ...session, ...fresh } : session;
             }),
           );
@@ -189,13 +230,18 @@ export default function App() {
 
   const replaceSession = (updated: SessionMeta) => {
     const apply = (list: SessionMeta[]) =>
-      list.map((session) => (session.id === updated.id ? { ...session, ...updated } : session));
+      list.map((session) =>
+        session.id === updated.id ? { ...session, ...updated } : session,
+      );
     setSessions(apply);
     setArchived(apply);
   };
 
   /** Point the active conversation at a workspace or agent (per session). */
-  const configureSession = async (config: { workspace?: string; agent?: string }) => {
+  const configureSession = async (config: {
+    workspace?: string;
+    agent?: string;
+  }) => {
     if (!activeId) return;
     const updated = await api.setSessionConfig(activeId, config);
     replaceSession(updated);
@@ -231,11 +277,38 @@ export default function App() {
     setArchived(apply);
   };
 
+  /** Open the header title for editing; Enter/blur saves, Esc discards. */
+  const beginRename = () => {
+    if (!active) return;
+    renameCancelled.current = false;
+    setTitleDraft(active.title);
+    setRenaming(true);
+  };
+
+  const commitRename = async () => {
+    setRenaming(false);
+    if (renameCancelled.current) {
+      renameCancelled.current = false;
+      return;
+    }
+    if (!active) return;
+    const title = titleDraft.trim();
+    if (!title || title === active.title) return;
+    try {
+      await renameSession(active.id, title);
+    } catch (error) {
+      toast.error(`重命名失败：${String(error).replace(/^Error:\s*/, "")}`);
+    }
+  };
+
   const archiveSession = async (id: string, value: boolean) => {
     const updated = await api.archiveSession(id, value);
     if (value) {
       setSessions((prev) => prev.filter((session) => session.id !== id));
-      setArchived((prev) => [updated, ...prev.filter((item) => item.id !== id)]);
+      setArchived((prev) => [
+        updated,
+        ...prev.filter((item) => item.id !== id),
+      ]);
       if (activeId === id) {
         const next = sessions.find((session) => session.id !== id);
         setActiveId(next?.id ?? null);
@@ -323,9 +396,38 @@ export default function App() {
             <PanelLeftIcon />
           </Button>
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-sm font-medium max-sm:text-base">
-              {active?.title ?? "AmritaGO"}
-            </h1>
+            {renaming && active ? (
+              <input
+                autoFocus
+                value={titleDraft}
+                onChange={(event) => setTitleDraft(event.target.value)}
+                onBlur={() => void commitRename()}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") event.currentTarget.blur();
+                  if (event.key === "Escape") {
+                    renameCancelled.current = true;
+                    event.currentTarget.blur();
+                  }
+                }}
+                aria-label="会话标题"
+                className="w-full rounded-sm border border-border bg-background px-1.5 py-0.5 text-sm font-medium outline-none focus:border-ring/60"
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={beginRename}
+                disabled={!active}
+                title={active ? "重命名会话" : undefined}
+                className="group/title flex max-w-full items-center gap-1.5 text-left disabled:cursor-default"
+              >
+                <h1 className="truncate text-sm font-medium max-sm:text-base">
+                  {active?.title ?? "AmritaGO"}
+                </h1>
+                {active && (
+                  <PencilIcon className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/title:opacity-100" />
+                )}
+              </button>
+            )}
             {active && (
               <p className="truncate text-xs text-muted-foreground">
                 {active.agent ?? "标准模式"} · {active.message_count} 条消息
@@ -344,15 +446,6 @@ export default function App() {
             aria-label={`配色：${THEME_LABEL[theme]}`}
           >
             <ThemeIcon />
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="max-sm:h-10 max-sm:px-3"
-            onClick={createSession}
-          >
-            <PlusIcon />
-            新会话
           </Button>
         </header>
 
@@ -390,6 +483,7 @@ export default function App() {
             models={models}
             activeAgent={active?.agent ?? activeAgent}
             activeModel={activeModel}
+            contextVersion={contextVersion}
             onRunningChange={(value) => {
               if (activeId) markRunning(activeId, value);
             }}
@@ -430,7 +524,7 @@ export default function App() {
 
       <SettingsDialog
         open={settingsOpen}
-        onOpenChange={setSettingsOpen}
+        onOpenChange={handleSettingsOpenChange}
         tab={settingsTab}
       />
 

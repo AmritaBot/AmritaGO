@@ -55,9 +55,13 @@ export function ConfigField({
               </span>
             )}
           </label>
-          <p className="font-mono text-[11px] text-muted-foreground">{field.path}</p>
+          <p className="font-mono text-[11px] text-muted-foreground">
+            {field.path}
+          </p>
           {field.description && (
-            <p className="mt-0.5 text-xs text-muted-foreground">{field.description}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {field.description}
+            </p>
           )}
         </div>
 
@@ -117,8 +121,13 @@ export function ConfigField({
 }
 
 /** Pick the error that belongs to ``path`` (or to one of its children). */
-export function errorFor(errors: FieldError[], path: string): FieldError | undefined {
-  return errors.find((err) => err.field === path || err.field.startsWith(`${path}.`));
+export function errorFor(
+  errors: FieldError[],
+  path: string,
+): FieldError | undefined {
+  return errors.find(
+    (err) => err.field === path || err.field.startsWith(`${path}.`),
+  );
 }
 
 /**

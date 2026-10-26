@@ -19,10 +19,7 @@ function Input({ className, type, ...props }: React.ComponentProps<"input">) {
   );
 }
 
-function Textarea({
-  className,
-  ...props
-}: React.ComponentProps<"textarea">) {
+function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
   return (
     <textarea
       data-slot="textarea"

@@ -133,7 +133,10 @@ export function PromptDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             取消
           </Button>
-          <Button onClick={() => void submit()} disabled={!value.trim() || busy}>
+          <Button
+            onClick={() => void submit()}
+            disabled={!value.trim() || busy}
+          >
             {busy ? "处理中…" : confirmLabel}
           </Button>
         </DialogFooter>

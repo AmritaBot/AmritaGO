@@ -58,7 +58,10 @@ export function ChatFooter({
           <SquareTerminalIcon className="size-3" />
           终端
           <ChevronDownIcon
-            className={cn("size-3 transition-transform", terminalOpen && "rotate-180")}
+            className={cn(
+              "size-3 transition-transform",
+              terminalOpen && "rotate-180",
+            )}
           />
         </button>
 

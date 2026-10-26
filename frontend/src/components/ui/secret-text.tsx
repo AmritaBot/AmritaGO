@@ -43,7 +43,13 @@ function SecretToken({ value }: { value: string }) {
   );
 }
 
-export function SecretText({ text, className }: { text: string; className?: string }) {
+export function SecretText({
+  text,
+  className,
+}: {
+  text: string;
+  className?: string;
+}) {
   const parts = useMemo(() => splitSecrets(text), [text]);
   if (parts.length === 1 && typeof parts[0] === "string") {
     return <>{text}</>;
@@ -54,7 +60,10 @@ export function SecretText({ text, className }: { text: string; className?: stri
         typeof part === "string" ? (
           part
         ) : (
-          <SecretToken key={`${index}-${part.secret.slice(-4)}`} value={part.secret} />
+          <SecretToken
+            key={`${index}-${part.secret.slice(-4)}`}
+            value={part.secret}
+          />
         ),
       )}
     </span>

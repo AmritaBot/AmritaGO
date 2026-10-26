@@ -67,7 +67,9 @@ export function MarkdownOrSource({
 
       {mode === "rendered" ? (
         <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-sm">
-          {content.trim() ? <Markdown content={content} /> : (
+          {content.trim() ? (
+            <Markdown content={content} />
+          ) : (
             <span className="text-muted-foreground">{emptyHint}</span>
           )}
         </div>

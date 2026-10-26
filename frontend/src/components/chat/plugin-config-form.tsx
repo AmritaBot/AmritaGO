@@ -47,7 +47,9 @@ export function PluginConfigForm({ plugin }: { plugin: string }) {
 
   const dirty = useMemo(() => {
     if (!config) return false;
-    return Object.entries(draft).some(([path, value]) => config.values[path] !== value);
+    return Object.entries(draft).some(
+      ([path, value]) => config.values[path] !== value,
+    );
   }, [config, draft]);
 
   const setValue = (path: string, value: unknown) => {
@@ -85,7 +87,9 @@ export function PluginConfigForm({ plugin }: { plugin: string }) {
   }
 
   if (!config) {
-    return <p className="py-4 text-xs text-muted-foreground">无法读取该插件的配置</p>;
+    return (
+      <p className="py-4 text-xs text-muted-foreground">无法读取该插件的配置</p>
+    );
   }
 
   return (

@@ -12,7 +12,7 @@
  * uses (`key: value`, `key:`, lists, `|` blocks and `#` comments).
  */
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import CodeMirror, { type Extension, EditorView } from "@uiw/react-codemirror";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
@@ -45,7 +45,8 @@ function decorateFrontmatter(view: EditorView): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
   const doc = view.state.doc;
   const texts: string[] = [];
-  for (let index = 1; index <= doc.lines; index += 1) texts.push(doc.line(index).text);
+  for (let index = 1; index <= doc.lines; index += 1)
+    texts.push(doc.line(index).text);
 
   const end = frontmatterEnd(texts);
   if (end < 0) return builder.finish();
@@ -106,22 +107,78 @@ const highlight = HighlightStyle.define([
   { tag: [tags.monospace, tags.string], color: "var(--chart-3, #2f9e6f)" },
 ]);
 
-const theme = EditorView.theme({
-  "&": { backgroundColor: "transparent", color: "inherit", height: "100%" },
-  ".cm-scroller": {
-    fontFamily: "var(--font-mono, ui-monospace), monospace",
-    fontSize: "12px",
-    lineHeight: "1.7",
-  },
-  ".cm-content": { padding: "10px 0" },
-  ".cm-gutters": { display: "none" },
-  ".cm-activeLine": { backgroundColor: "transparent" },
-  "&.cm-focused": { outline: "none" },
-  ".cm-preset-fence": { color: "var(--muted-foreground)", opacity: "0.7" },
-  ".cm-preset-key": { color: "var(--chart-5, #3d7fd6)", fontWeight: "500" },
-  ".cm-preset-value": { color: "var(--chart-4, #c26a2d)" },
-  ".cm-preset-comment": { color: "var(--muted-foreground)", fontStyle: "italic" },
-});
+/**
+ * The editor's colours, taken from the app's theme variables.
+ *
+ * ``dark`` is not cosmetic here: CodeMirror derives its base palette (selection
+ * layer, caret, panels) from the theme type, and a light-typed theme inside a
+ * dark page is exactly the white slab this used to render. The ``@uiw`` wrapper
+ * also injects its own light theme unless told not to, so it is passed
+ * ``theme="none"`` and everything visual comes from here.
+ */
+function editorTheme(dark: boolean) {
+  return EditorView.theme(
+    {
+      "&": { backgroundColor: "transparent", color: "inherit", height: "100%" },
+      ".cm-scroller": {
+        fontFamily: "var(--font-mono, ui-monospace), monospace",
+        fontSize: "12px",
+        lineHeight: "1.7",
+      },
+      ".cm-content": { padding: "10px 0", caretColor: "var(--foreground)" },
+      ".cm-gutters": { display: "none" },
+      ".cm-activeLine": { backgroundColor: "transparent" },
+      "&.cm-focused": { outline: "none" },
+      ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--foreground)" },
+      "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection":
+        {
+          backgroundColor: "color-mix(in oklab, var(--ring) 30%, transparent)",
+        },
+      ".cm-panels": {
+        backgroundColor: "var(--card)",
+        color: "var(--card-foreground)",
+      },
+      ".cm-tooltip": {
+        backgroundColor: "var(--popover)",
+        color: "var(--popover-foreground)",
+        border: "1px solid var(--border)",
+      },
+      ".cm-preset-fence": { color: "var(--muted-foreground)", opacity: "0.7" },
+      ".cm-preset-key": { color: "var(--chart-5, #3d7fd6)", fontWeight: "500" },
+      ".cm-preset-value": { color: "var(--chart-4, #c26a2d)" },
+      ".cm-preset-comment": {
+        color: "var(--muted-foreground)",
+        fontStyle: "italic",
+      },
+    },
+    { dark },
+  );
+}
+
+/**
+ * The page's resolved theme, read off the root element.
+ *
+ * The app toggles a `dark` class from a single `useTheme` instance; a second
+ * instance here would hold its own copy and drift when the user cycles themes,
+ * so this watches the class the app actually applies.
+ */
+function useDarkMode(): boolean {
+  const [dark, setDark] = useState(() =>
+    document.documentElement.classList.contains("dark"),
+  );
+  useEffect(() => {
+    const read = () =>
+      setDark(document.documentElement.classList.contains("dark"));
+    read();
+    const observer = new MutationObserver(read);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+    return () => observer.disconnect();
+  }, []);
+  return dark;
+}
 
 export function PresetEditor({
   value,
@@ -132,14 +189,15 @@ export function PresetEditor({
   onChange: (next: string) => void;
   minHeight?: string;
 }) {
+  const dark = useDarkMode();
   const extensions = useMemo<Extension[]>(
     () => [
       markdown({ base: markdownLanguage }),
       syntaxHighlighting(highlight),
       frontmatterPlugin,
-      theme,
+      editorTheme(dark),
     ],
-    [],
+    [dark],
   );
 
   return (
@@ -151,6 +209,8 @@ export function PresetEditor({
         value={value}
         onChange={onChange}
         extensions={extensions}
+        // ``none`` disables the wrapper's built-in light theme; see editorTheme.
+        theme="none"
         height="100%"
         // Fill the flex container so long presets remain scrollable.
         style={{ height: "100%", minHeight: 0 }}

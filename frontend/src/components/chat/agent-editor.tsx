@@ -50,7 +50,8 @@ function UnknownToolsWarning({ patterns }: { patterns: string[] }) {
         </span>
         <span className="font-mono">{patterns.join("、")}</span>
         <span className="mt-0.5 block text-muted-foreground">
-          匹配范围是插件工具 + MCP 工具（名字对上就行）。如果那个 MCP 服务器现在没连上，
+          匹配范围是插件工具 + MCP 工具（名字对上就行）。如果那个 MCP
+          服务器现在没连上，
           它的工具不在池里，这条规则本身可能是对的；保存不会被拦。
         </span>
       </span>
@@ -77,14 +78,16 @@ export function AgentEditor({
     const others = agents.filter((agent) => agent.scope !== "builtin");
     return [...builtin, ...others];
   }, [agents]);
-  const [selected, setSelected] = useState<string | null>(listed[0]?.name ?? null);
+  const [selected, setSelected] = useState<string | null>(
+    listed[0]?.name ?? null,
+  );
   const [detail, setDetail] = useState<AgentDetail | null>(null);
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
-  //: A switch that would throw away unsaved edits, parked until it is confirmed.
+  // A switch that would throw away unsaved edits, parked until it is confirmed.
   const [pendingSwitch, setPendingSwitch] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [newScope, setNewScope] = useState<"user" | "workspace">("user");
@@ -160,11 +163,11 @@ export function AgentEditor({
     try {
       const result = await api.deleteAgent(selected);
       onChanged();
-      setSelected(listed.find((agent) => agent.name !== selected)?.name ?? null);
+      setSelected(
+        listed.find((agent) => agent.name !== selected)?.name ?? null,
+      );
       toast.success(
-        result.restored_builtin
-          ? "已删除覆盖文件，恢复为内建预设"
-          : "已删除",
+        result.restored_builtin ? "已删除覆盖文件，恢复为内建预设" : "已删除",
       );
     } catch (exc) {
       toast.error(`删除失败：${String(exc)}`);
@@ -174,7 +177,7 @@ export function AgentEditor({
   const toolNames = tools.map((tool) => tool.name);
   const mcpNames = mcp.map((server) => server.name);
   const isBuiltin = detail?.scope === "builtin";
-  //: "`react`（标准 ReAct）" — shown so a preset author sees what each name buys.
+  // "`react`（标准 ReAct）" — shown so a preset author sees what each name buys.
   const workflowLabel = (workflow: WorkflowSpec) =>
     `${workflow.name}（${workflow.mode_label}）`;
 
@@ -209,7 +212,9 @@ export function AgentEditor({
                     {agent.title}
                   </span>
                   {(agent.unknown_tools?.length ?? 0) > 0 && (
-                    <span title={`${agent.unknown_tools?.length} 条 tools 规则没匹配到工具`}>
+                    <span
+                      title={`${agent.unknown_tools?.length} 条 tools 规则没匹配到工具`}
+                    >
                       <TriangleAlertIcon className="size-3 shrink-0 text-amber-500" />
                     </span>
                   )}
@@ -229,12 +234,17 @@ export function AgentEditor({
             </button>
           ))}
           {listed.length === 0 && (
-            <p className="px-2 py-1 text-xs text-muted-foreground">还没有预设</p>
+            <p className="px-2 py-1 text-xs text-muted-foreground">
+              还没有预设
+            </p>
           )}
         </div>
 
         <div className="flex shrink-0 flex-col gap-1.5 border-t border-border pt-2">
-          <Label htmlFor="new-agent" className="text-[11px] text-muted-foreground">
+          <Label
+            htmlFor="new-agent"
+            className="text-[11px] text-muted-foreground"
+          >
             新建预设
           </Label>
           <Input
@@ -267,8 +277,11 @@ export function AgentEditor({
             <div className="flex items-start gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
               <LockIcon className="mt-0.5 size-3.5 shrink-0" />
               <span>
-                <span className="font-medium text-foreground">内建模式，不可修改或删除。</span>{" "}
-                它由程序提供，磁盘上没有对应的 Markdown 文件，所以保存和删除接口都会直接拒绝。
+                <span className="font-medium text-foreground">
+                  内建模式，不可修改或删除。
+                </span>{" "}
+                它由程序提供，磁盘上没有对应的 Markdown
+                文件，所以保存和删除接口都会直接拒绝。
                 要定制，请新建一个同名预设把它覆盖掉——删掉那个文件就会恢复成这里的样子。
               </span>
             </div>
@@ -304,7 +317,9 @@ export function AgentEditor({
               <dd>{detail.memory === "session" ? "已挂载" : "未挂载"}</dd>
             </dl>
             <div className="flex flex-col gap-1.5">
-              <span className="text-xs text-muted-foreground">系统提示词（只读）</span>
+              <span className="text-xs text-muted-foreground">
+                系统提示词（只读）
+              </span>
               <MarkdownOrSource
                 content={detail.prompt ?? ""}
                 emptyHint="（无正文，使用程序内置的默认提示词）"
@@ -320,7 +335,10 @@ export function AgentEditor({
         ) : detail ? (
           <>
             <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-              <code className="min-w-0 flex-1 truncate" title={detail.path ?? ""}>
+              <code
+                className="min-w-0 flex-1 truncate"
+                title={detail.path ?? ""}
+              >
                 {detail.path}
               </code>
               {dirty && <span className="text-amber-600">未保存</span>}
@@ -364,8 +382,10 @@ export function AgentEditor({
               <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-border bg-muted/30 px-2 py-1.5 text-[11px] text-muted-foreground">
                 <CheckIcon className="size-3.5 shrink-0" />
                 <span className="min-w-0 flex-1">
-                  {detail.workflow_pinned ? `固定 ${detail.workflow}` : "跟随全局工作流"} ·{" "}
-                  工具 {toolNames.length} · MCP {mcpNames.length}
+                  {detail.workflow_pinned
+                    ? `固定 ${detail.workflow}`
+                    : "跟随全局工作流"}{" "}
+                  · 工具 {toolNames.length} · MCP {mcpNames.length}
                   {(detail.unknown_tools?.length ?? 0) > 0 && (
                     <span className="ml-1 text-amber-600 dark:text-amber-400">
                       · {detail.unknown_tools?.length} 条规则没匹配上
@@ -376,25 +396,29 @@ export function AgentEditor({
                   <span className="flex flex-col gap-1.5">
                     <span>
                       工作流可用：
-                      {workflows.map((item) => workflowLabel(item)).join("、")}。
+                      {workflows.map((item) => workflowLabel(item)).join("、")}
+                      。
                     </span>
                     <span>
-                      <code>workflow</code> 决定循环方式：<code>react</code> 一轮一次请求；
-                      <code>react-step</code> 先拆解成多步计划再逐步执行。不写则跟随全局，
+                      <code>workflow</code> 决定循环方式：<code>react</code>{" "}
+                      一轮一次请求；
+                      <code>react-step</code>{" "}
+                      先拆解成多步计划再逐步执行。不写则跟随全局，
                       写了就锁死，全局开关对它无效。
                     </span>
                     <span>
-                      <code>access</code> 写 <code>[readonly]</code> 即限制为只读；不写表示
-                      三种权限都可用。
+                      <code>access</code> 写 <code>[readonly]</code>{" "}
+                      即限制为只读；不写表示 三种权限都可用。
                     </span>
                     <span>
-                      <code>memory: session</code> 挂载一个会话临时目录
-                      （<code>~/.amrita/sessions/&lt;id&gt;/memory</code>），计划写在里面，
+                      <code>memory: session</code> 挂载一个会话临时目录 （
+                      <code>~/.amrita/sessions/&lt;id&gt;/memory</code>
+                      ），计划写在里面，
                       随对话删除；只读预设也能用，因为它不属于工作区。
                     </span>
                     <span>
-                      正文就是系统提示词，没有全局提示词覆盖它。正文中以 <code>\---</code> 开头
-                      表示一行 <code>---</code>。
+                      正文就是系统提示词，没有全局提示词覆盖它。正文中以{" "}
+                      <code>\---</code> 开头 表示一行 <code>---</code>。
                     </span>
                   </span>
                 </InfoHint>

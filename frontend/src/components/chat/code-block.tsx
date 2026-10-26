@@ -25,7 +25,14 @@ import { highlight, type Token } from "@/lib/highlight";
 import { cn } from "@/lib/utils";
 
 /** Languages whose text is worth handing to the ANSI renderer. */
-const ANSI_LANGS = new Set(["ansi", "log", "console", "terminal", "shell-out", "output"]);
+const ANSI_LANGS = new Set([
+  "ansi",
+  "log",
+  "console",
+  "terminal",
+  "shell-out",
+  "output",
+]);
 
 export interface CodeBlockProps {
   code: string;
@@ -63,7 +70,8 @@ function filenameFor(language: string): string {
       html: "html",
       css: "css",
       sql: "sql",
-    }[language.toLowerCase()] ?? (language.toLowerCase() || "txt");
+    }[language.toLowerCase()] ??
+    (language.toLowerCase() || "txt");
   return `snippet.${ext}`;
 }
 
@@ -174,7 +182,11 @@ function HtmlPreviewButton({ code, title }: { code: string; title: string }) {
   );
 }
 
-export function CodeBlock({ code, language, streaming = false }: CodeBlockProps) {
+export function CodeBlock({
+  code,
+  language,
+  streaming = false,
+}: CodeBlockProps) {
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
@@ -202,7 +214,9 @@ export function CodeBlock({ code, language, streaming = false }: CodeBlockProps)
   return (
     <div className="group/code relative my-2 overflow-hidden rounded-lg border border-border bg-muted/50">
       <div className="flex items-center gap-1.5 border-b border-border/70 bg-muted/40 px-2.5 py-1">
-        <span className="font-mono text-[11px] text-muted-foreground">{label}</span>
+        <span className="font-mono text-[11px] text-muted-foreground">
+          {label}
+        </span>
         {lines > 1 && (
           <span className="text-[11px] text-muted-foreground">{lines} 行</span>
         )}

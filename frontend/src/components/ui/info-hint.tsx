@@ -54,7 +54,10 @@ export function InfoHint({
   }, [open]);
 
   return (
-    <span ref={root} className={cn("relative inline-flex align-middle", className)}>
+    <span
+      ref={root}
+      className={cn("relative inline-flex align-middle", className)}
+    >
       <button
         type="button"
         aria-label={label}

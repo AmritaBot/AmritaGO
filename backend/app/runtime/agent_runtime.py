@@ -332,6 +332,8 @@ async def _iter_events(
     error_text: str | None = None
     steps = 0
     tool_calls = 0
+    # A call is announced twice (start and finish), so count ids, not events.
+    counted_tools: set[str] = set()
     first_delta_at: float | None = None
     last_delta_at: float | None = None
     last_rounds = 0
@@ -352,7 +354,11 @@ async def _iter_events(
                 if _is_step(metadata):
                     steps += 1
                 if _is_tool_call(metadata):
-                    tool_calls += 1
+                    # Deduplicate call events by tool_id.
+                    tool_id = str(metadata.get("tool_id") or "")
+                    if tool_id and tool_id not in counted_tools:
+                        counted_tools.add(tool_id)
+                        tool_calls += 1
                 history_events.append(payload)
                 yield {"type": "meta", **payload}
                 rounds = len(billing.records)

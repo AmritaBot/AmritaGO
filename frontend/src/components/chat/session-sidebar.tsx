@@ -10,13 +10,14 @@
  * the wrong row is easy, and a side bar is not the place to lose a transcript.
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   ArchiveIcon,
   ArchiveRestoreIcon,
   ChevronDownIcon,
   GitBranchIcon,
   MessageSquareIcon,
+  PencilIcon,
   PlusIcon,
   SettingsIcon,
   Trash2Icon,
@@ -52,6 +53,24 @@ function SessionRow({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(session.title);
+  // Esc must not save; blur fires after the input is unmounted by Esc.
+  const cancelled = useRef(false);
+
+  const beginEdit = () => {
+    cancelled.current = false;
+    setDraft(session.title);
+    setEditing(true);
+  };
+
+  const commitEdit = () => {
+    setEditing(false);
+    if (cancelled.current) {
+      cancelled.current = false;
+      return;
+    }
+    const title = draft.trim();
+    if (title && title !== session.title) onRename(title);
+  };
 
   return (
     <div
@@ -74,21 +93,22 @@ function SessionRow({
       ) : (
         <MessageSquareIcon className="size-4 shrink-0 opacity-80" />
       )}
-      <div className="min-w-0 flex-1">        {editing ? (
+      <div className="min-w-0 flex-1">
+        {" "}
+        {editing ? (
           <input
             autoFocus
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onClick={(event) => event.stopPropagation()}
-            onBlur={() => {
-              const title = draft.trim();
-              if (title && title !== session.title) onRename(title);
-              setEditing(false);
-            }}
+            onBlur={commitEdit}
             onKeyDown={(event) => {
               event.stopPropagation();
               if (event.key === "Enter") event.currentTarget.blur();
-              if (event.key === "Escape") setEditing(false);
+              if (event.key === "Escape") {
+                cancelled.current = true;
+                event.currentTarget.blur();
+              }
             }}
             className="w-full rounded-sm border border-border bg-background px-1.5 py-0.5 text-sm outline-none"
           />
@@ -97,8 +117,7 @@ function SessionRow({
             className={cn("truncate", running && !editing && "thinking-sheen")}
             onDoubleClick={(event) => {
               event.stopPropagation();
-              setEditing(true);
-              setDraft(session.title);
+              beginEdit();
             }}
             title={session.title}
           >
@@ -142,6 +161,18 @@ function SessionRow({
           </>
         ) : (
           <>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={(event) => {
+                event.stopPropagation();
+                beginEdit();
+              }}
+              aria-label="重命名会话"
+              title="重命名会话"
+            >
+              <PencilIcon className="size-3.5" />
+            </Button>
             <Button
               variant="ghost"
               size="icon-sm"
@@ -201,7 +232,7 @@ export function SessionSidebar({
   version?: string;
 }) {
   const [showArchive, setShowArchive] = useState(false);
-  //: The session waiting for a second click, plus which action it was for.
+  // The session waiting for a second click, plus which action it was for.
   const [pending, setPending] = useState<{
     session: SessionMeta;
     kind: "archive" | "delete";
@@ -226,7 +257,12 @@ export function SessionSidebar({
             v{version}
           </div>
         </div>
-        <Button variant="ghost" size="icon-sm" onClick={onCreate} aria-label="新建会话">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={onCreate}
+          aria-label="新建会话"
+        >
           <PlusIcon />
         </Button>
       </div>
@@ -252,7 +288,9 @@ export function SessionSidebar({
             </li>
           ))}
           {sessions.length === 0 && (
-            <li className="px-2 py-1 text-xs text-muted-foreground">还没有会话</li>
+            <li className="px-2 py-1 text-xs text-muted-foreground">
+              还没有会话
+            </li>
           )}
         </ul>
 
@@ -289,7 +327,9 @@ export function SessionSidebar({
               </li>
             ))}
             {archived.length === 0 && (
-              <li className="px-2 py-1 text-xs text-muted-foreground">归档为空</li>
+              <li className="px-2 py-1 text-xs text-muted-foreground">
+                归档为空
+              </li>
             )}
           </ul>
         )}

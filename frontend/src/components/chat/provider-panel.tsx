@@ -105,8 +105,10 @@ export function ProviderPanel({
   const [probing, setProbing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [probeError, setProbeError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string | null>(providers[0]?.id ?? null);
-  //: The delete button only opens the dialog; nothing is destroyed on one click.
+  const [selected, setSelected] = useState<string | null>(
+    providers[0]?.id ?? null,
+  );
+  // The delete button only opens the dialog; nothing is destroyed on one click.
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
@@ -262,7 +264,8 @@ export function ProviderPanel({
             <span className="truncate text-[11px] text-muted-foreground">
               {item.models.length} 个模型
               {item.has_api_key ? "" : " · 无密钥"}
-            </span>          </button>
+            </span>{" "}
+          </button>
         ))}
         <Button
           variant="outline"
@@ -321,7 +324,9 @@ export function ProviderPanel({
               onChange={(event) =>
                 setDraft((prev) => ({ ...prev, api_key: event.target.value }))
               }
-              placeholder={provider?.has_api_key ? "已保存，留空则不修改" : "sk-..."}
+              placeholder={
+                provider?.has_api_key ? "已保存，留空则不修改" : "sk-..."
+              }
               className="h-8 text-xs"
             />
           </div>
@@ -352,7 +357,12 @@ export function ProviderPanel({
             )}
             保存 Provider
           </Button>
-          <Button size="sm" variant="outline" onClick={probe} disabled={probing}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={probe}
+            disabled={probing}
+          >
             {probing ? (
               <Loader2Icon className="size-3.5 animate-spin" />
             ) : (
@@ -371,7 +381,10 @@ export function ProviderPanel({
             </Button>
           )}
           <div className="ml-auto flex items-center gap-2">
-            <Label htmlFor="pv-enabled" className="text-xs text-muted-foreground">
+            <Label
+              htmlFor="pv-enabled"
+              className="text-xs text-muted-foreground"
+            >
               启用
             </Label>
             <Switch
@@ -394,7 +407,8 @@ export function ProviderPanel({
 
         {provider && !provider.has_api_key && (
           <p className="rounded-md border border-amber-500/40 bg-amber-500/5 px-2.5 py-1.5 text-[11px] leading-relaxed text-amber-700 dark:text-amber-400">
-            这个 Provider 没有保存 API Key。本地推理服务、内网网关、带额外认证头的部署
+            这个 Provider 没有保存 API
+            Key。本地推理服务、内网网关、带额外认证头的部署
             常常不需要密钥，所以这里只是提醒、不会阻止发送；请求会以无认证头的方式发出。
           </p>
         )}
@@ -406,7 +420,9 @@ export function ProviderPanel({
             </span>
             <div className="flex max-h-32 flex-wrap gap-1 overflow-y-auto">
               {probed.map((name) => {
-                const exists = provider?.models.some((item) => item.id === name);
+                const exists = provider?.models.some(
+                  (item) => item.id === name,
+                );
                 return (
                   <button
                     key={name}
@@ -415,9 +431,7 @@ export function ProviderPanel({
                     onClick={() => addModel(name)}
                     className={cn(
                       "rounded border border-border px-1.5 py-0.5 font-mono text-[11px] transition-colors",
-                      exists
-                        ? "cursor-default opacity-40"
-                        : "hover:bg-accent",
+                      exists ? "cursor-default opacity-40" : "hover:bg-accent",
                       !selected && "cursor-not-allowed opacity-40",
                     )}
                   >
@@ -460,7 +474,8 @@ export function ProviderPanel({
                   </span>
                   <span className="block text-[11px] text-muted-foreground">
                     ctx {entry.max_context ?? "默认"} · out {entry.max_output}
-                    {entry.price_in !== null && ` · ${entry.price_in}/${entry.price_out} ${entry.currency}`}
+                    {entry.price_in !== null &&
+                      ` · ${entry.price_in}/${entry.price_out} ${entry.currency}`}
                   </span>
                 </span>
                 <Button
@@ -491,13 +506,14 @@ export function ProviderPanel({
           <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
             <span>原生思考按模型开关</span>
             <InfoHint label="原生思考说明">
-              模型自己产出推理过程。开启后请求会带上 <code>thinking</code> 参数，
-              服务商真实产生推理 token，按输出计费；同时会把强制的{" "}
+              模型自己产出推理过程。开启后请求会带上 <code>thinking</code>{" "}
+              参数， 服务商真实产生推理 token，按输出计费；同时会把强制的{" "}
               <code>tool_choice</code> 降级为 <code>auto</code>。
               <span className="text-amber-700 dark:text-amber-400">
                 模型不支持时可能直接报错
               </span>
-              ，所以不确定就关掉。它和「核心配置」里的 reasoning 选项不是一回事：
+              ，所以不确定就关掉。它和「核心配置」里的 reasoning
+              选项不是一回事：
               后者只改提示词，任何模型都能用，两者同时开启会重复消耗输出预算。
             </InfoHint>
           </div>

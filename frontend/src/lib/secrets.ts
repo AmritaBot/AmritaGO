@@ -43,9 +43,10 @@ export function splitSecrets(text: string): (string | { secret: string })[] {
 export function maskSecret(value: string): string {
   const scheme = /^(Bearer\s+)/i.exec(value)?.[1] ?? "";
   const rest = value.slice(scheme.length);
-  const prefix = /^(sk-ant-|sk-proj-|sk-|github_pat_|gh[pousr]_|xox[abprs]-|glpat-|AIza|AKIA|hf_)/.exec(
-    rest,
-  )?.[1] ?? "";
+  const prefix =
+    /^(sk-ant-|sk-proj-|sk-|github_pat_|gh[pousr]_|xox[abprs]-|glpat-|AIza|AKIA|hf_)/.exec(
+      rest,
+    )?.[1] ?? "";
   const body = rest.slice(prefix.length);
   const tail = body.length >= 12 ? rest.slice(-4) : "";
   return `${scheme}${prefix}${"•".repeat(8)}${tail ? `…${tail}` : ""}`;

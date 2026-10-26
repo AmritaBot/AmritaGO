@@ -31,7 +31,13 @@ function shellLabel(session: ShellSession): string {
   return `${session.shell} · ${flavour}`;
 }
 
-function ExitBadge({ code, timedOut }: { code: number | null; timedOut: boolean }) {
+function ExitBadge({
+  code,
+  timedOut,
+}: {
+  code: number | null;
+  timedOut: boolean;
+}) {
   if (timedOut) {
     return (
       <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] text-destructive">
@@ -77,7 +83,9 @@ function SessionCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
             <span className="font-medium">{shellLabel(session)}</span>
-            <code className="text-[10px] text-muted-foreground">{session.id}</code>
+            <code className="text-[10px] text-muted-foreground">
+              {session.id}
+            </code>
             {session.executable_configured && (
               <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
                 自定义解释器
@@ -87,10 +95,16 @@ function SessionCard({
               {session.runs} 次命令
             </span>
           </div>
-          <div className="truncate text-xs text-muted-foreground" title={session.cwd}>
+          <div
+            className="truncate text-xs text-muted-foreground"
+            title={session.cwd}
+          >
             {session.cwd}
           </div>
-          <div className="truncate text-[11px] text-muted-foreground" title={session.executable}>
+          <div
+            className="truncate text-[11px] text-muted-foreground"
+            title={session.executable}
+          >
             {session.executable || "PATH 上的默认解释器"}
           </div>
         </div>
@@ -126,14 +140,18 @@ function SessionCard({
                     <ChevronRightIcon className="size-3 shrink-0 text-muted-foreground" />
                   )}
                   <ExitBadge code={run.exit_code} timedOut={run.timed_out} />
-                  <code className="min-w-0 flex-1 truncate text-[11px]">{run.command}</code>
+                  <code className="min-w-0 flex-1 truncate text-[11px]">
+                    {run.command}
+                  </code>
                   <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
                     {run.elapsed_ms} ms
                   </span>
                 </button>
                 {expanded && (
                   <div className="border-t border-border/60 px-2 py-1.5">
-                    <div className="mb-1 text-[10px] text-muted-foreground">{run.cwd}</div>
+                    <div className="mb-1 text-[10px] text-muted-foreground">
+                      {run.cwd}
+                    </div>
                     <pre className="max-h-56 overflow-auto rounded bg-[#0d1117] px-2 py-1.5 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-[#c9d1d9]">
                       {run.output.trim() ? (
                         <AnsiText text={run.output.trim()} />
@@ -215,8 +233,8 @@ export function TerminalPanel() {
             </span>
             <span>
               想在哪个解释器里跑，去「插件 → shell-pwsh / shell-unix → 配置」
-              填可执行文件路径（例如 <code>/bin/bash</code>）和初始化脚本；
-              bash 与 zsh 共用同一个 unix 插件，方言在配置里选。
+              填可执行文件路径（例如 <code>/bin/bash</code>）和初始化脚本； bash
+              与 zsh 共用同一个 unix 插件，方言在配置里选。
             </span>
             <span>
               「断开」只是忘掉会话记住的目录与历史，不删任何文件；
@@ -236,7 +254,8 @@ export function TerminalPanel() {
       )}
       {!loading && sessions.length === 0 && (
         <p className="text-sm text-muted-foreground">
-          还没有终端会话。Agent 调用 shell 工具、或你在输入框里让它跑命令之后，这里会出现。
+          还没有终端会话。Agent 调用 shell
+          工具、或你在输入框里让它跑命令之后，这里会出现。
         </p>
       )}
       {sessions.map((session) => (

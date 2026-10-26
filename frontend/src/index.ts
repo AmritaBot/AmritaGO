@@ -20,7 +20,10 @@ const PORT = Number(process.env.AMRITA_FRONTEND_PORT ?? "5173");
 
 type UpgradeData = { url: string };
 
-const bridges = new Map<import("bun").ServerWebSocket<UpgradeData>, WebSocket>();
+const bridges = new Map<
+  import("bun").ServerWebSocket<UpgradeData>,
+  WebSocket
+>();
 
 /** Cached dev build: ``{ html, builtAt }``. */
 let devBuild: { html: string; builtAt: number } | null = null;
@@ -80,7 +83,9 @@ const server = Bun.serve<UpgradeData>({
 
     // Proxy WebSockets locally so the browser uses one origin.
     if (url.pathname === "/api/ws/chat") {
-      const ok = server.upgrade(req, { data: { url: url.pathname + url.search } });
+      const ok = server.upgrade(req, {
+        data: { url: url.pathname + url.search },
+      });
       return ok ? undefined : new Response("Upgrade failed", { status: 400 });
     }
 
@@ -90,7 +95,9 @@ const server = Bun.serve<UpgradeData>({
 
     // Serve cached dev assets directly instead of rebuilding per request.
     if (url.pathname.startsWith("/assets/")) {
-      const asset = Bun.file(path.join(DEV_OUT, url.pathname.slice("/".length)));
+      const asset = Bun.file(
+        path.join(DEV_OUT, url.pathname.slice("/".length)),
+      );
       if (await asset.exists()) {
         return new Response(asset, {
           headers: { "Cache-Control": "no-store" },
@@ -139,7 +146,10 @@ async function renderIndex(): Promise<Response> {
 async function buildOnce(): Promise<Response> {
   const result = await Bun.build({
     // Add the TSX entry so index.html references a real bundle entry.
-    entrypoints: [path.join(ROOT, "index.html"), path.join(ROOT, "src", "main.tsx")],
+    entrypoints: [
+      path.join(ROOT, "index.html"),
+      path.join(ROOT, "src", "main.tsx"),
+    ],
     outdir: DEV_OUT,
     plugins: [(await import("bun-plugin-tailwind")).default],
     target: "browser",
@@ -161,8 +171,11 @@ async function buildOnce(): Promise<Response> {
     });
   }
 
-  const emitted = result.outputs.find((output) => output.path.endsWith(".html"));
-  if (!emitted) return new Response("index.html missing from build", { status: 500 });
+  const emitted = result.outputs.find((output) =>
+    output.path.endsWith(".html"),
+  );
+  if (!emitted)
+    return new Response("index.html missing from build", { status: 500 });
 
   // Rewrite URLs to absolute /assets so deep routes still resolve them.
   let html = await emitted.text();
@@ -193,7 +206,10 @@ async function copyBrand() {
 
 function htmlResponse(html: string): Response {
   return new Response(html, {
-    headers: { "Content-Type": "text/html;charset=utf-8", "Cache-Control": "no-store" },
+    headers: {
+      "Content-Type": "text/html;charset=utf-8",
+      "Cache-Control": "no-store",
+    },
   });
 }
 

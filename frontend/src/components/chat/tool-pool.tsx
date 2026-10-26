@@ -124,7 +124,8 @@ export function ToolPool({
       disabled_patterns: next,
       enabled: tree.groups
         .flatMap((group) => group.tools)
-        .filter((tool) => !next.includes(tool.name) && tool.mode_allowed).length,
+        .filter((tool) => !next.includes(tool.name) && tool.mode_allowed)
+        .length,
     };
     setTree(optimistic);
     setBusy(true);
@@ -163,7 +164,9 @@ export function ToolPool({
   };
 
   const setAllCollapsed = (value: boolean) => {
-    setCollapsed(value ? new Set((tree?.groups ?? []).map((g) => g.id)) : new Set());
+    setCollapsed(
+      value ? new Set((tree?.groups ?? []).map((g) => g.id)) : new Set(),
+    );
   };
 
   if (!tree) {
@@ -193,7 +196,8 @@ export function ToolPool({
           />
         </div>
         <span className="shrink-0 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground">
-          已启用 <b className="text-foreground">{tree.enabled}</b> / {tree.total}
+          已启用 <b className="text-foreground">{tree.enabled}</b> /{" "}
+          {tree.total}
         </span>
         <Button
           variant="ghost"
@@ -219,7 +223,8 @@ export function ToolPool({
         <InfoHint label="工具开关说明">
           <span className="flex flex-col gap-1.5">
             <span>
-              工具池是每次对话临时组装的：插件声明的工具、MCP 服务器提供的工具都在里面，
+              工具池是每次对话临时组装的：插件声明的工具、MCP
+              服务器提供的工具都在里面，
               这里的开关只是在装配时把它们滤掉，不会改动插件本身。
             </span>
             <span>
@@ -228,7 +233,8 @@ export function ToolPool({
               白名单却没收它，或者当前访问模式不允许。
             </span>
             <span>
-              只读模式下 shell 工具仍会保留，写入由命令检查拦；想彻底不跑就别勾它。
+              只读模式下 shell
+              工具仍会保留，写入由命令检查拦；想彻底不跑就别勾它。
             </span>
           </span>
         </InfoHint>
@@ -246,13 +252,18 @@ export function ToolPool({
           const allOn = group.tools.every((tool) => tool.enabled);
           const noneOn = group.tools.every((tool) => !tool.enabled);
           return (
-            <div key={group.id} className="border-b border-border last:border-b-0">
+            <div
+              key={group.id}
+              className="border-b border-border last:border-b-0"
+            >
               <div className="flex items-center gap-2 px-2 py-1.5 max-sm:py-2.5">
                 <button
                   type="button"
                   onClick={() => toggleCollapse(group.id)}
                   aria-expanded={!isCollapsed}
-                  aria-label={isCollapsed ? `展开 ${group.label}` : `折叠 ${group.label}`}
+                  aria-label={
+                    isCollapsed ? `展开 ${group.label}` : `折叠 ${group.label}`
+                  }
                   className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
                 >
                   {isCollapsed ? (
@@ -277,7 +288,9 @@ export function ToolPool({
                   )}
                 </span>
                 {group.kind === "mcp" && !group.connected && (
-                  <span className="shrink-0 text-[10px] text-destructive">未连接</span>
+                  <span className="shrink-0 text-[10px] text-destructive">
+                    未连接
+                  </span>
                 )}
                 <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                   {group.enabled_count}/{group.count}
@@ -308,14 +321,17 @@ export function ToolPool({
                             checked={tool.enabled}
                             disabled={busy}
                             aria-label={`启用 ${tool.name}`}
-                            onChange={(event) => toggleTool(tool, event.target.checked)}
+                            onChange={(event) =>
+                              toggleTool(tool, event.target.checked)
+                            }
                           />
                           <span className="min-w-0 flex-1">
                             <span className="flex flex-wrap items-baseline gap-x-2">
                               <code
                                 className={cn(
                                   "text-xs",
-                                  state === "blocked" && "text-muted-foreground",
+                                  state === "blocked" &&
+                                    "text-muted-foreground",
                                 )}
                               >
                                 {tool.name}

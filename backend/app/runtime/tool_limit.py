@@ -38,6 +38,18 @@ from app.runtime.tool_gate import CANCELLED_PREFIX, TIMEOUT_PREFIX, TOOLS
 # Fallback when ``settings.json`` cannot be read; matches the field default.
 DEFAULT_TOOL_TIMEOUT = 600.0
 
+# Bound recorded tool arguments and results to avoid duplicating large payloads in the transcript.
+MAX_RECORDED_ARGS = 4000
+MAX_RECORDED_RESULT = 8000
+
+
+def _clip(text: str, limit: int) -> str:
+    """Keep the head of a long payload, and say how much was dropped."""
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}\n…（共 {len(text)} 字符，已截断）"
+
+
 # What the transcript says when the user cuts a spent run off.
 ABORT_NOTICE = (
     "已按你的选择中断本轮：工具调用预算用完，模型不再继续调用工具。需要接着做时发一条新消息即可。"
@@ -151,6 +163,9 @@ class LimitAwareStrategy(ReActAgentStrategy):
         its own still wins, because it returns before this one fires.
         """
         timeout = await self._tool_timeout()
+        arguments = _clip(str(tool_call.function.arguments or ""), MAX_RECORDED_ARGS)
+        # Record the requested arguments before execution so users can inspect them.
+        await self._record_call(tool_call, arguments=arguments)
         gate = TOOLS.open(tool_call.id, tool_call.function.name, asyncio.get_running_loop())
         await self._publish(
             {
@@ -164,6 +179,8 @@ class LimitAwareStrategy(ReActAgentStrategy):
         task = asyncio.create_task(super().call_tool(tool_call))
         # Preserve the aborted outcome in the published result.
         outcome = "aborted"
+        # What the transcript should show as this call's result, if anything.
+        result: str | None = None
         loop = asyncio.get_running_loop()
         deadline = None if timeout <= 0 else loop.time() + timeout
         try:
@@ -182,20 +199,31 @@ class LimitAwareStrategy(ReActAgentStrategy):
                     continue
                 outcome = "timeout"
                 await _abandon(task)
-                return await self._tool_timed_out(tool_call, timeout)
+                result = _clip(await self._tool_timed_out(tool_call, timeout), MAX_RECORDED_RESULT)
+                return result
             if task in done:
+                exc = task.exception()
+                if exc is None:
+                    outcome = "done"
+                    result = _clip(task.result(), MAX_RECORDED_RESULT)
+                    return result
                 # Let the framework convert the re-raised tool failure into a result.
-                failed = task.cancelled() or task.exception() is not None
-                outcome = "failed" if failed else "done"
+                outcome = "failed"
+                result = _clip(f"{type(exc).__name__}: {exc}", MAX_RECORDED_RESULT)
                 return task.result()
             outcome = "cancelled"
             await _abandon(task)
-            return await self._tool_cancelled(tool_call, gate.future.result())
+            result = _clip(
+                await self._tool_cancelled(tool_call, gate.future.result()), MAX_RECORDED_RESULT
+            )
+            return result
         finally:
             TOOLS.close(tool_call.id)
             if not task.done():
                 task.cancel()
-            with suppress(asyncio.CancelledError):
+            with suppress(asyncio.CancelledError, Exception):
+                if result is not None:
+                    await self._record_call(tool_call, arguments=arguments, result=result)
                 await self._publish(
                     {"type": "tool_finished", "tool_id": tool_call.id, "outcome": outcome}
                 )
@@ -222,6 +250,43 @@ class LimitAwareStrategy(ReActAgentStrategy):
         )
         await self._tool_notice(tool_call, notice, "tool_timeout")
         return notice
+
+    async def _record_call(
+        self,
+        tool_call: ToolCall,
+        *,
+        arguments: str,
+        result: str | None = None,
+    ) -> None:
+        """Write the call's payload into the transcript.
+
+        AmritaCore's own ``function_call`` events carry the tool name and the
+        ``tool_id`` but not the arguments or the return value, so the UI had two
+        rows saying "已运行 unix_run" and nothing to look at. This emits the same
+        event *type* — the UI folds by ``tool_id``, so it lands on the row that
+        already exists — with the payload filled in. ``is_done`` is what turns
+        the row from 运行中 into 完成, so the closing event is the one carrying
+        ``result``.
+        """
+        metadata = cast(
+            MessageMetadataPayloadSystem,
+            {
+                "type": "function_call",
+                "message": "",
+                "extra_type": None,
+                "function_name": tool_call.function.name,
+                "tool_id": tool_call.id,
+                "is_done": result is not None,
+                "arguments": arguments,
+                **({} if result is None else {"result": result}),
+            },
+        )
+        content = (
+            f"Called tool {tool_call.function.name}\n"
+            if result is not None
+            else f"Calling function {tool_call.function.name}\n"
+        )
+        await self.io_stream.yield_response(MessageWithMetadata(content=content, metadata=metadata))
 
     async def _tool_notice(self, tool_call: ToolCall, content: str, extra_type: str) -> None:
         """Record the ending in the transcript, not only on the live stream.

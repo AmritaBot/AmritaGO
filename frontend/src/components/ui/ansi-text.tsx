@@ -77,7 +77,8 @@ function colour256(index: number): string | null {
 }
 
 function rgb(r: number, g: number, b: number): string {
-  const clamp = (value: number) => Math.max(0, Math.min(255, Math.round(value)));
+  const clamp = (value: number) =>
+    Math.max(0, Math.min(255, Math.round(value)));
   return `rgb(${clamp(r)} ${clamp(g)} ${clamp(b)})`;
 }
 
@@ -126,7 +127,11 @@ function applySgr(state: SgrState, params: number[]): SgrState {
         next[target] = colour256(params[index + 2]);
         index += 2;
       } else if (mode === 2) {
-        next[target] = rgb(params[index + 2], params[index + 3], params[index + 4]);
+        next[target] = rgb(
+          params[index + 2],
+          params[index + 3],
+          params[index + 4],
+        );
         index += 4;
       }
     }
@@ -217,7 +222,9 @@ export function AnsiText({
   );
   if (!styled) {
     // Strip consumed ANSI codes when they produced no styling.
-    return <span className={className}>{segments.map((s) => s.text).join("")}</span>;
+    return (
+      <span className={className}>{segments.map((s) => s.text).join("")}</span>
+    );
   }
   return (
     <span className={className}>

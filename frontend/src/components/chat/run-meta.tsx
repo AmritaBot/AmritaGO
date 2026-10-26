@@ -27,13 +27,16 @@ import { cn } from "@/lib/utils";
 
 function compact(value: number): string {
   if (value < 1000) return String(value);
-  if (value < 1_000_000) return `${(value / 1000).toFixed(value < 10_000 ? 2 : 1)}k`;
+  if (value < 1_000_000)
+    return `${(value / 1000).toFixed(value < 10_000 ? 2 : 1)}k`;
   return `${(value / 1_000_000).toFixed(2)}M`;
 }
 
 function money(usage: TurnUsage): string | null {
-  if (usage.cost === null || usage.cost === undefined || usage.cost === 0) return null;
-  const value = usage.cost < 0.01 ? usage.cost.toFixed(5) : usage.cost.toFixed(4);
+  if (usage.cost === null || usage.cost === undefined || usage.cost === 0)
+    return null;
+  const value =
+    usage.cost < 0.01 ? usage.cost.toFixed(5) : usage.cost.toFixed(4);
   return `${value} ${usage.currency}`;
 }
 
@@ -134,7 +137,9 @@ export function RunMeta({
           <Chip icon={GitBranchIcon} title={plan.workflowTitle}>
             {plan.workflowTitle}
           </Chip>
-          {plan.workflowTitle === MOCK_WORKFLOW_TITLE && <MockHint side="top" />}
+          {plan.workflowTitle === MOCK_WORKFLOW_TITLE && (
+            <MockHint side="top" />
+          )}
           {!busy && last && (
             <Chip icon={ActivityIcon}>
               {last.rounds} 次请求{last.steps > 0 ? ` ${last.steps} 步` : ""}
@@ -184,9 +189,7 @@ export function RunMeta({
               .join("\n")}
           >
             {Math.round(last.context_percent)}%
-            {messages !== null && (
-              <span>· {messages} 条</span>
-            )}
+            {messages !== null && <span>· {messages} 条</span>}
           </Chip>
         )}
       {!busy && last && duration(last.duration_ms) && (

@@ -46,7 +46,7 @@ class _Pending:
     )
     command: str = ""
     created_at: float = field(default_factory=time.time)
-    #: Identify the session to distinguish tool timeouts from human wait time.
+    # Identify the session to distinguish tool timeouts from human wait time.
     session_id: str = ""
 
 

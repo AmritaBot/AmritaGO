@@ -17,7 +17,8 @@ function readStored(): Theme {
   if (stored === "light" || stored === "dark" || stored === "system") {
     // Migrate the pre-rename key once, then forget it.
     if (localStorage.getItem(KEY) === null) localStorage.setItem(KEY, stored);
-    if (localStorage.getItem(LEGACY_KEY) !== null) localStorage.removeItem(LEGACY_KEY);
+    if (localStorage.getItem(LEGACY_KEY) !== null)
+      localStorage.removeItem(LEGACY_KEY);
     return stored;
   }
   return "system";
@@ -34,7 +35,8 @@ export function useTheme() {
   // Watch the media query so system-theme changes apply without a reload.
   useEffect(() => {
     const media = window.matchMedia(QUERY);
-    const handler = (event: MediaQueryListEvent) => setSystemDark(event.matches);
+    const handler = (event: MediaQueryListEvent) =>
+      setSystemDark(event.matches);
     setSystemDark(media.matches);
     media.addEventListener("change", handler);
     return () => media.removeEventListener("change", handler);
@@ -51,7 +53,9 @@ export function useTheme() {
   }, [theme, resolved]);
 
   const cycle = useCallback(() => {
-    setTheme((prev) => (prev === "light" ? "dark" : prev === "dark" ? "system" : "light"));
+    setTheme((prev) =>
+      prev === "light" ? "dark" : prev === "dark" ? "system" : "light",
+    );
   }, []);
 
   return { theme, resolved, setTheme, cycle };
