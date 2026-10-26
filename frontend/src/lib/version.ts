@@ -23,8 +23,7 @@ export async function loadAppVersion(): Promise<string> {
       return cached;
     }
   } catch {
-    // Server unreachable or a proxy error: fall back without caching, so a
-    // later call can still pick up the real value.
+    // Do not cache fallback versions so later requests can recover the server value.
   }
   return APP_VERSION;
 }

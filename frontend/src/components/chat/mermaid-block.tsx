@@ -87,8 +87,7 @@ export function MermaidBlock({
         lastGood.current = settled;
       } catch (exc) {
         if (cancelled) return;
-        // Mid-stream a parse failure is normal (half a diagram). Only report
-        // it once the message has stopped growing.
+        // Ignore parse failures while the diagram is still streaming.
         if (!streaming) {
           setError(exc instanceof Error ? exc.message : String(exc));
           setSvg("");

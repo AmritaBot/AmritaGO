@@ -14,8 +14,7 @@ import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { cn } from "@/lib/utils";
 
 export function TooltipProvider({ children }: { children: ReactNode }) {
-  // A short delay: instant tooltips fire while the pointer is only passing
-  // through, which is noisy in a list of options.
+  // Delay tooltips to avoid noise while the pointer passes over a list.
   return (
     <TooltipPrimitive.Provider delayDuration={350} skipDelayDuration={150}>
       {children}

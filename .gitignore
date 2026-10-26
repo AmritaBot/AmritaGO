@@ -1,9 +1,4 @@
-# Workspace-scoped agent directory.
-#
-# Skills are project knowledge and should be committed:
-#   .amrita/skills/<name>/SKILL.md
-# Memory (conversations, config, presets) is personal state and never belongs in
-# a repo — and presets carry API keys.
+# Commit project skills, but keep personal state and API-key-bearing presets out of the repository.
 .amrita/sessions/
 .amrita/settings.json
 .amrita/core.json
@@ -23,6 +18,5 @@ __pycache__/
 .DS_Store
 .env
 
-# Copied in by scripts/package.sh for the duration of a build; the real file
-# lives at the repository root and a stale copy must never be committed.
+# Ignore the temporary LICENSE copy staged by scripts/package.sh during builds.
 backend/LICENSE

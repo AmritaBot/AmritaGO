@@ -44,8 +44,7 @@ export default function App() {
   const [activeAgent, setActiveAgent] = useState("standard");
   const [models, setModels] = useState<ModelOption[]>([]);
   const [activeModel, setActiveModel] = useState<string | null>(null);
-  //: Sessions with a turn alive server-side. Kept apart from ``sessions`` so a
-  //: background run keeps its indicator even when the row's data is stale.
+  //: Track live sessions separately so stale rows retain their running indicator.
   const [runningIds, setRunningIds] = useState<string[]>([]);
 
   const markRunning = useCallback((id: string, value: boolean) => {
@@ -63,8 +62,7 @@ export default function App() {
     ]);
     setSessions(live.sessions);
     setArchived(stored.sessions.filter((session) => session.archived));
-    // The server is the source of truth: a reload while a turn is running must
-    // bring the indicator back, and a finished background turn must clear it.
+    // Restore running indicators from the server after reloads.
     setRunningIds(live.sessions.filter((session) => session.running).map((s) => s.id));
     return live.sessions;
   };
@@ -77,8 +75,7 @@ export default function App() {
     ]);
     setWorkspaces(workspaceList.workspaces);
     setActiveWorkspace(workspaceList.active ?? workspaceList.workspaces[0]?.path ?? null);
-      // ``agents`` already carries the built-ins; only add the fallback entry
-      // when it is missing, or the dropdown shows 标准模式 twice.
+      // Add the built-in fallback only when the agent list omits it.
       setAgents(
         agentList.agents.some((agent) => agent.name === agentList.builtin.name)
           ? agentList.agents
@@ -397,8 +394,7 @@ export default function App() {
               if (activeId) markRunning(activeId, value);
             }}
             onSelectWorkspace={async (path) => {
-              // Both: this conversation moves now, and the default moves with
-              // it so the next session starts where the user is working.
+              // Apply the workspace to this session and future sessions.
               await configureSession({ workspace: path });
               await api.activateWorkspace(path);
               setActiveWorkspace(path);
@@ -454,8 +450,7 @@ export default function App() {
             await refreshContext();
             return null;
           } catch (error) {
-            // The dialog stays open: a mistyped path is the common case, and
-            // closing it would throw away what the user already typed.
+            // Keep the dialog open so a mistyped path can be corrected.
             return String(error).replace(/^Error:\s*/, "");
           }
         }}

@@ -93,9 +93,7 @@ function foldCall(call: ToolCall, event: MetaEvent): ToolCall {
   const done = event.metadata.is_done === true;
   const error = event.metadata.err == null ? null : String(event.metadata.err);
   const result = typeof event.metadata.result === "string" ? event.metadata.result : null;
-  // A cancelled or timed-out call still receives the framework's ordinary
-  // completion event (it returns a result string), which must not relabel it
-  // "完成": the user needs to see that it was cut short.
+  // Keep cancelled and timed-out calls from being relabeled as completed.
   const settled = call.status === "cancelled" || call.status === "timeout";
   return {
     ...call,
@@ -132,8 +130,7 @@ export function buildTrace(trace: Entry[], streaming: boolean): Item[] {
     }
     const name = toolNameOf(entry);
     if (name === null) {
-      // A cancel/timeout notice names the call it belongs to, so the tool row
-      // stops spinning and says what happened instead of "未返回".
+      // Match interruption notices to their tool rows and stop their spinner.
       const interrupted = interruptedStatus(entry.metadata);
       if (interrupted) {
         const target = String(entry.metadata.tool_id ?? "");
@@ -175,8 +172,7 @@ export function buildTrace(trace: Entry[], streaming: boolean): Item[] {
   });
 
   if (!streaming) {
-    // A finished turn cannot still be running a tool; leaving it spinning made
-    // a completed answer look stuck.
+    // Mark leftover running tools as unknown when the turn ends.
     for (const item of items) {
       if (item.kind === "tool" && item.call.status === "running") {
         item.call.status = "unknown";
@@ -585,8 +581,7 @@ export function Trace({
     <div className="mb-2 flex flex-col gap-0.5 border-l border-border/70 pl-2">
       {items.map((item, index) => {
         if (item.kind === "reasoning") {
-          // Only the newest step is still being written; the earlier ones are
-          // history and read better as one line each.
+          // Stream only the newest reasoning step; render earlier steps as history.
           const live = streaming && index === items.length - 1;
           return (
             <ReasoningRow

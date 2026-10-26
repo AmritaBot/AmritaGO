@@ -31,8 +31,7 @@ export function useTheme() {
   const [theme, setTheme] = useState<Theme>(readStored);
   const [systemDark, setSystemDark] = useState<boolean>(prefersDark);
 
-  // "system" is not a class name: watch the media query so a desktop switch
-  // is reflected without a reload.
+  // Watch the media query so system-theme changes apply without a reload.
   useEffect(() => {
     const media = window.matchMedia(QUERY);
     const handler = (event: MediaQueryListEvent) => setSystemDark(event.matches);

@@ -1,15 +1,4 @@
-/**
- * Front-end-only test stream.
- *
- * The point is to exercise the *rendering* path — streaming, reasoning,
- * tool-event pills, usage footer, markdown, collapse, edge cases — without a
- * provider, a key, or a round trip. Nothing here is sent anywhere; the reply is
- * generated in the browser and disappears on reload.
- *
- * Enabled from 设置 -> 插件 -> 开发者选项. Kept out of the normal path on purpose:
- * a fake answer that looks real is a trap if it is one switch away from the
- * default.
- */
+/** Browser-only test stream for chat rendering; it uses no provider and is not persisted. */
 
 import type { StreamEvent } from "@/lib/api";
 
@@ -266,8 +255,7 @@ export function startMockTurn({
   }
 
   if (wantsParallelAuditDemo(prompt)) {
-    // Two calls parked at once, arriving a beat apart so the list grows instead
-    // of appearing whole.
+    // Stagger parallel confirmations so the list grows visibly.
     const stamp = Date.now();
     const parked = [
       {
@@ -326,8 +314,7 @@ export function startMockTurn({
   }
 
   if (wantsToolCancelDemo(prompt)) {
-    // A call is running and stays running: the row shows 取消, and answering
-    // the dialog is what ends this turn (see ``finishMockToolCancel``).
+    // Keep the mock tool running until its cancellation dialog is answered.
     const toolId = `mock-call-${Date.now()}`;
     schedule(
       () =>
@@ -419,9 +406,7 @@ export function startMockTurn({
   }
 
   if (wantsCompactDemo(prompt)) {
-    // Mirrors the backend: "compacting" while the fold runs, "compacted" once
-    // the summary is in the history — and the turn ends there, because
-    // ``/compact`` is a command, not a question for the model.
+    // Mirror backend compaction states and end the command turn after folding.
     schedule(
       () =>
         onEvent({
@@ -455,8 +440,7 @@ export function startMockTurn({
   }
 
   if (wantsLimitDemo(prompt)) {
-    // Spend a few deltas first so there is a transcript behind the card, then
-    // park exactly like the backend does.
+    // Emit transcript content before parking at the mock budget gate.
     schedule(
       () =>
         onEvent({
@@ -501,8 +485,7 @@ export function startMockTurn({
       }),
     460,
   );
-  // The window in which the real backend would accept a cancel. It is short
-  // here on purpose: the mock only has to prove the button appears and leaves.
+  // Keep the mock cancellation window short to exercise its UI.
   schedule(
     () =>
       onEvent({
@@ -535,8 +518,7 @@ export function startMockTurn({
     520,
   );
 
-  // A second thinking burst after the tool: thinking and tool calls alternate,
-  // which is the whole reason they share one timeline.
+  // Add post-tool reasoning to demonstrate the shared event timeline.
   POST_TOOL_REASONING.forEach((line, index) => {
     schedule(
       () => onEvent({ type: "reasoning", text: `${line}\n` }),
@@ -729,8 +711,7 @@ export function finishMockAudit({
       result: approved ? "exit 0" : "用户拒绝执行",
     },
   });
-  // Several requests parked at once answer independently: this one records its
-  // outcome, and the last answer is what closes the turn.
+  // Resolve parallel requests independently and end the turn after the last answer.
   if (!final) return;
   const body = approved
     ? [

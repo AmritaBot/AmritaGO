@@ -128,24 +128,18 @@ export function useChatSocket(sessionId: string | null) {
   const [liveUsage, setLiveUsage] = useState<LiveUsage | null>(null);
   const [totals, setTotals] = useState<UsageTotals | null>(null);
   const [lastUsage, setLastUsage] = useState<TurnUsage | null>(null);
-  //: Tool calls parked waiting for the user, in arrival order. Several can be
-  //: outstanding at once (parallel tool calls each ask), and the turn stays
-  //: blocked until every one of them is answered.
+  //: Parallel confirmations remain pending until each is answered.
   const [pendingConfirms, setPendingConfirms] = useState<ConfirmRequest[]>([]);
   //: The run spent its tool budget and is parked until this is answered.
   const [limitRequest, setLimitRequest] = useState<ToolLimitRequest | null>(null);
-  //: Tool calls the server is executing right now, keyed by ``tool_id``. Only
-  //: these may be cancelled; anything else has already finished.
+  //: Track cancellable tools by ID while they are running.
   const [runningTools, setRunningTools] = useState<Record<string, RunningTool>>({});
   const [todos, setTodos] = useState<TodoList | null>(null);
-  //: Messages the next request will carry. Comes from the usage endpoint on
-  //: load and from each finished turn, so a reload and a live run agree.
+  //: Count messages carried into the next request.
   const [contextMessages, setContextMessages] = useState<number | null>(null);
   const startedAtRef = useRef<number | null>(null);
   const firstDeltaRef = useRef<number | null>(null);
-  //: When the currently-running reasoning interval opened, and the total spent
-  //: reasoning before it. Reasoning and answer chunks interleave, so the total
-  //: is the sum of intervals rather than first-chunk-to-last-chunk.
+  //: Accumulate reasoning intervals because reasoning and answers interleave.
   const thinkStartRef = useRef<number | null>(null);
   const thinkTotalRef = useRef(0);
 
@@ -160,8 +154,7 @@ export function useChatSocket(sessionId: string | null) {
   const manualClose = useRef(false);
   const sessionRef = useRef<string | null>(sessionId);
   const retryRef = useRef<number | null>(null);
-  //: Mirror of ``messages`` so a callback can read the latest list without
-  //: capturing it (and without re-creating the callback on every delta).
+  //: Mirror messages so callbacks can read the latest value.
   const messagesRef = useRef<ChatMessage[]>([]);
 
   sessionRef.current = sessionId;
@@ -283,9 +276,7 @@ export function useChatSocket(sessionId: string | null) {
             : message,
         ),
       );
-      // Drop an assistant bubble that never produced anything (e.g. a preset
-      // error right after send) unless it carries an error or a notice: a turn
-      // cut off by the budget gate has nothing but the notice to show.
+      // Drop empty assistant bubbles unless they contain an error or notice.
       setMessages((prev) =>
         prev.filter(
           (message) =>
@@ -319,10 +310,7 @@ export function useChatSocket(sessionId: string | null) {
           setRunningTools({});
           startedAtRef.current = Date.now();
           firstDeltaRef.current = null;
-          // A repeated `start` means the server replayed the buffer from the
-          // beginning: rebuild this bubble instead of appending twice. The
-          // user bubble may also already be on screen (either optimistic or
-          // from history), so drop a duplicate trailing user message.
+          // Rebuild replayed turns and remove a duplicate trailing user bubble.
           const id = activeIdRef.current;
           pendingRef.current = { text: "", reasoning: "" };
           clearTimer();
@@ -397,9 +385,7 @@ export function useChatSocket(sessionId: string | null) {
           break;
         }
         case "confirm": {
-          // The turn is blocked server-side until this is answered, so the
-          // panel is the only way forward — not merely a notification. Several
-          // calls can ask at once, so this appends instead of replacing.
+          // Append confirmations because the server blocks until each is answered.
           const request: ConfirmRequest = {
             request_id: event.request_id,
             title: event.title,
@@ -421,16 +407,14 @@ export function useChatSocket(sessionId: string | null) {
           break;
         }
         case "confirm_closed": {
-          // The call behind the prompt was answered, timed out or cancelled:
-          // the question is gone, so only that one leaves the dialog.
+          // Remove only the confirmation that was answered, timed out, or cancelled.
           setPendingConfirms((prev) =>
             prev.filter((item) => item.request_id !== event.request_id),
           );
           break;
         }
         case "tool_running": {
-          // A cancel button is only truthful while the server still holds the
-          // call, so this event opens the window and ``tool_finished`` closes it.
+          // Enable cancellation only while the server is running the tool.
           setRunningTools((prev) => ({
             ...prev,
             [event.tool_id]: {
@@ -452,8 +436,7 @@ export function useChatSocket(sessionId: string | null) {
           break;
         }
         case "limit": {
-          // The run is parked inside the tool loop until this is answered, so a
-          // timeout winds it down rather than leaving it hanging.
+          // Wind down the parked run if its budget gate times out.
           settleThinking();
           setLimitRequest({
             request_id: event.request_id,
@@ -465,8 +448,7 @@ export function useChatSocket(sessionId: string | null) {
         }
         case "error": {
           flush();
-          // An error before any delta (a bad preset, say) has no bubble yet;
-          // show it on its own so the user sees why nothing happened.
+          // Show errors that arrive before any assistant delta.
           const id = activeIdRef.current ?? ensureAssistant();
           setMessages((prev) =>
             prev.map((message) =>
@@ -481,8 +463,7 @@ export function useChatSocket(sessionId: string | null) {
           break;
         }
         case "done": {
-          // A run that failed mid-way still ends with ``done`` (the server
-          // publishes it to terminate the stream); don't clear the error.
+          // Preserve errors when a failed run emits its terminating done event.
           finalizeAssistant({ usage: event.usage ?? null, live: null });
           setLiveUsage(null);
           setRunningTools({});
@@ -491,13 +472,10 @@ export function useChatSocket(sessionId: string | null) {
           }
           // A gate cannot outlive its run.
           setLimitRequest(null);
-          // A command turn has no usage; keep the previous turn's figures
-          // instead of blanking the footer.
+          // Keep prior usage figures when a command turn reports none.
           if (event.usage) setLastUsage(event.usage);
           if (event.workflow === "command" && sessionRef.current) {
-            // A command turn reports no usage of its own, but it can change what
-            // the counters describe — ``/compact`` shrinks the context — so the
-            // footer is refreshed instead of showing a stale number.
+            // Refresh usage after commands that can change the context.
             const id = sessionRef.current;
             api
               .usage(id)
@@ -508,16 +486,13 @@ export function useChatSocket(sessionId: string | null) {
               })
               .catch(() => undefined);
           }
-          // A parked confirmation cannot outlive its turn; the server already
-          // resolved it (answered, timed out or cancelled).
+          // Clear confirmations when their run ends.
           setPendingConfirms([]);
-          // A gate cannot outlive its run either, and an aborted one never got
-          // an answer at all.
+          // Clear gates when their run ends.
           setLimitRequest(null);
           if (event.totals) {
             setTotals(event.totals);
-            // The sidebar keeps its own copy of the session list; tell it the
-            // counters moved instead of refetching on every chunk.
+            // Notify the sidebar when session usage changes.
             window.dispatchEvent(
               new CustomEvent("amrita:usage", {
                 detail: { sessionId: sessionRef.current, totals: event.totals },
@@ -566,8 +541,7 @@ export function useChatSocket(sessionId: string | null) {
       try {
         handleEvent(JSON.parse(event.data) as StreamEvent);
       } catch {
-        // A malformed frame must not kill the socket; the server never sends
-        // one, but a proxy could.
+        // Ignore malformed frames so they cannot break the socket.
       }
     };
 
@@ -612,13 +586,11 @@ export function useChatSocket(sessionId: string | null) {
       setPendingConfirms([]);
       setRunningTools({});
       if (isMockMode()) {
-        // A test turn is never persisted, so there is no history to load and
-        // keeping an older transcript on screen would be misleading.
+        // Clear persisted history in mock mode because mock turns are not saved.
         setMessages([]);
         return;
       }
-      // The plan is state of its own: it outlives individual turns, so reload
-      // it from disk rather than relying on the stream replaying it.
+      // Reload persisted plans because they outlive individual turns.
       api
         .getTodos(id)
         .then((list) => setTodos(list.total > 0 ? list : null))
@@ -640,10 +612,7 @@ export function useChatSocket(sessionId: string | null) {
               content: entry.content,
               reasoning: entry.reasoning ?? "",
               events: entry.events ?? [],
-              // The transcript stores the reasoning blob and the events in
-              // separate fields, so their interleaving is gone by the time a
-              // session is reloaded; "reasoning, then steps" is the only order
-              // the stored data can justify.
+              // Rebuild traces as reasoning then steps because history stores them separately.
               trace: [
                 ...(entry.reasoning
                   ? [{ kind: "reasoning" as const, text: entry.reasoning }]
@@ -709,9 +678,7 @@ export function useChatSocket(sessionId: string | null) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
-  // If the user was away while a run was in flight, the socket replays the
-  // buffer on connect — but only when the page regains focus do we know the
-  // difference between "idle" and "still running".
+  // Reconnect on focus to recover runs that continued while the page was away.
   useEffect(() => {
     const onFocus = () => {
       const socket = socketRef.current;
@@ -759,8 +726,7 @@ export function useChatSocket(sessionId: string | null) {
       ]);
       pendingRef.current = { text: "", reasoning: "" };
       activeIdRef.current = null;
-      // A new turn starts a new measurement; the previous turn's total was
-      // already copied onto its bubble.
+      // Reset reasoning measurements when a new turn starts.
       thinkStartRef.current = null;
       thinkTotalRef.current = 0;
       setBusy(true);
@@ -768,8 +734,7 @@ export function useChatSocket(sessionId: string | null) {
       firstDeltaRef.current = null;
 
       if (mock) {
-        // Nothing leaves the browser: the fake stream drives the same event
-        // handler, so every rendering path is exercised for real.
+        // Drive mock events through the real handler to exercise rendering.
         clearMock();
         startMockTurn({
           prompt: text,
@@ -789,8 +754,7 @@ export function useChatSocket(sessionId: string | null) {
           message: text,
           attachments,
           model: model ?? undefined,
-          // The server narrows this against the preset's own `access` list, so
-          // sending it is a request, not a grant.
+          // Treat access as a request; the server narrows it against the preset.
           access: access ?? undefined,
         }),
       );
@@ -857,14 +821,10 @@ export function useChatSocket(sessionId: string | null) {
     (requestId: string, approved: boolean, command?: string, reason?: string) => {
       const request = pendingConfirms.find((item) => item.request_id === requestId);
       if (!request) return;
-      // Drop exactly this one, right away: the answer is already on its way and
-      // a second click must not send a second response. The others stay up.
+      // Remove the answered request immediately to prevent duplicate replies.
       setPendingConfirms((prev) => prev.filter((item) => item.request_id !== requestId));
       if (isMockConfirm(request.request_id)) {
-        // Test mode: the fabricated request is answered in-browser so the
-        // accepted / edited / rejected paths are all reachable without a shell.
-        // A parallel demo parks several at once, so only the last answer ends
-        // the turn — the earlier ones just record their own outcome.
+        // Exercise mock confirmation outcomes and end the turn after the final answer.
         const others = pendingConfirms.filter(
           (item) => item.request_id !== requestId && isMockConfirm(item.request_id),
         ).length;
@@ -902,8 +862,7 @@ export function useChatSocket(sessionId: string | null) {
       if (!request) return;
       setLimitRequest(null);
       if (isMockLimit(request.request_id)) {
-        // Test mode: the fabricated gate is answered in-browser, so every
-        // branch is reachable without burning a real tool budget.
+        // Exercise every mock budget-gate branch without spending a real budget.
         finishMockLimit({
           onEvent: handleEvent,
           action,
@@ -923,9 +882,7 @@ export function useChatSocket(sessionId: string | null) {
         );
         return;
       }
-      // The socket died while the run was parked: the gate times out on its own
-      // and winds down, so there is nothing else to send. Say so rather than
-      // letting the click look like it worked.
+      // Report the disconnected socket because the parked gate will time out.
       toast.error("连接已断开，无法回复；本轮会自动收尾");
     },
     [handleEvent, limitRequest, sessionId],
@@ -941,9 +898,7 @@ export function useChatSocket(sessionId: string | null) {
   const cancelTool = useCallback(
     (toolId: string, reason: string) => {
       if (isMockMode()) {
-        // Test mode has no server to ask, so the same events are fabricated:
-        // the row must end up "已取消" and the turn must continue, exactly as
-        // a real cancel does.
+        // Simulate cancellation events so the mock turn continues like a real one.
         const tool = runningTools[toolId]?.tool ?? "tool";
         setRunningTools((prev) => {
           const next = { ...prev };

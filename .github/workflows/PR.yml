@@ -54,7 +54,6 @@ jobs:
           cd frontend
           bun run typecheck
 
-      # Builds the SPA, copies LICENSE where hatchling can see it, packages,
-      # and fails if an artifact is missing the licence or bundles node_modules.
+      # Build the SPA, stage LICENSE, and verify the package artifacts.
       - name: Build frontend and package
         run: bash scripts/package.sh

@@ -110,9 +110,7 @@ export function RunMeta({
   const speed = last?.tokens_per_second ?? null;
   const cachePercent = cacheRate(last);
   const cost = last ? money(last) : null;
-  // The live turn reports the count too, but ``last`` (plus the reload payload)
-  // is the authoritative one: mid-run tools add several messages, so the live
-  // number lags and would flicker.
+  // Use persisted counts because live tool messages make the running total lag.
   const messages = contextMessages ?? last?.context_messages ?? null;
 
   const hasAnything =
@@ -121,9 +119,7 @@ export function RunMeta({
   return (
     <div
       className={cn(
-        // One row, never wrapping: a wrapped strip turns into a second toolbar
-        // and pushes the composer up. Overflow is clipped, and the least
-        // important tail (session totals) is the first thing to go.
+        // Keep the stats strip on one row and clip its least important tail.
         "flex min-w-0 flex-1 items-center gap-2.5 overflow-hidden text-[11px] whitespace-nowrap text-muted-foreground",
         !hasAnything && "justify-between",
       )}
@@ -225,8 +221,7 @@ export function RunMeta({
           aria-label="重新载入"
           className={cn(
             "ml-auto inline-flex shrink-0 items-center gap-1 rounded px-1 py-0.5 transition-colors hover:bg-muted hover:text-foreground",
-            // With totals present the strip already pushed something right, so
-            // the button needs no extra margin of its own.
+            // Avoid extra button margin when totals already occupy the row.
             totals?.turns && !!busy === false && "ml-0",
           )}
         >

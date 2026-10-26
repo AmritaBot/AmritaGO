@@ -46,8 +46,7 @@ class _Pending:
     )
     command: str = ""
     created_at: float = field(default_factory=time.time)
-    #: Session the question belongs to, so a tool timeout can tell
-    #: "the model is slow" from "the human is thinking".
+    #: Identify the session to distinguish tool timeouts from human wait time.
     session_id: str = ""
 
 
@@ -113,18 +112,14 @@ class AuditBroker:
                     "output": output,
                 }
             )
-            # No ``wait_for``: the question stays open until it is answered,
-            # the call is cancelled, or the turn is stopped.
+            # Wait until the question is answered, cancelled, or stopped.
             decision = await pending.future
             decision.request_id = request_id
             status = "answered"
             return decision
         finally:
             self._pending.pop(request_id, None)
-            # Every request closes exactly once, whatever ended it. The stream
-            # is replayed on reconnect, so an unbalanced ``confirm`` would
-            # resurrect a question that nobody can answer any more — and two
-            # parallel tool calls would then fight over one dialog.
+            # Close each request once to prevent replayed or competing confirmations.
             with suppress(asyncio.CancelledError, Exception):
                 await channel.publish(
                     {"type": "confirm_closed", "request_id": request_id, "status": status}

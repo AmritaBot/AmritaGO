@@ -219,8 +219,7 @@ export function Composer({
     [],
   );
 
-  // Client commands open a popover; anything else is sent as a message and
-  // answered by the backend, so a plugin's command needs no front-end change.
+  // Open local command popovers and send other commands to the backend.
   const commands = useMemo(
     () => [...clientCommands, ...(serverCommands ?? [])],
     [clientCommands, serverCommands],
@@ -270,8 +269,7 @@ export function Composer({
 
   const submit = () => {
     if (busy) return;
-    // A slash command is answered by the backend and needs no model, so it is
-    // checked before the guard: `/help` must work on a fresh install.
+    // Handle slash commands before model guards so /help works without a model.
     if (slashQuery !== null && filteredCommands.length > 0) {
       runCommand(filteredCommands[commandIndex]);
       return;
@@ -290,8 +288,7 @@ export function Composer({
     if (command.name === "permission") setOpen("permission");
     else if (command.name === "model") setOpen("model");
     else if (command.name === "agent") setOpen("agent");
-    // Everything else goes out as a message: the transcript shows the command
-    // and the backend's handler emits the steps that follow.
+    // Send other commands as messages for backend handling.
     else onSend(`/${command.name}`);
   };
 
@@ -334,9 +331,7 @@ export function Composer({
   };
 
   const PermissionIcon = PERMISSIONS[permission].icon;
-  // A preset that declares a single access mode is not a suggestion: the chip
-  // becomes a label, so nobody spends a turn discovering the server will
-  // narrow their request back down anyway.
+  // Show a fixed label when the preset allows only one access mode.
   const choiceModes: Permission[] =
     allowedPermissions && allowedPermissions.length > 0
       ? allowedPermissions
@@ -403,8 +398,7 @@ export function Composer({
               }}
               title={agent.title}
               subtitle={[
-                // Which loop the preset runs — "计划模式" and "编码模式" differ
-                // in workflow, and that is the part worth surfacing.
+                // Surface the workflow because it distinguishes these presets.
                 agent.workflowPinned === false
                   ? "跟随全局工作流"
                   : agent.workflowModeLabel,
@@ -744,8 +738,7 @@ function MenuItem({
 }) {
   return (
     <Tooltip
-      // The row is deliberately truncated; the tooltip is the only place the
-      // sentence survives, so it repeats the title instead of summarising.
+      // Repeat the full title because truncation hides the sentence.
       side="left"
       align="start"
       content={

@@ -1,19 +1,7 @@
-/**
- * Find credential-looking tokens in free text.
- *
- * This is a display filter, not a security boundary: it stops API keys from
- * sitting in plain sight in the transcript and in screenshots of it. The value
- * is never changed on disk or in what gets sent to the model — only how the
- * bubble draws it.
- *
- * The patterns are intentionally narrow. A greedy "long random string" rule
- * would eat hashes, base64 images and UUIDs, and every false positive makes the
- * transcript harder to read.
- */
+/** Mask credential-shaped tokens in displayed text only; stored and sent values remain unchanged. */
 
 const RULES: string[] = [
-  // Provider-specific prefixes, longest first so `sk-ant-…` is not read as
-  // `sk-…`.
+  // Match provider prefixes longest-first to avoid shorter-prefix collisions.
   String.raw`sk-ant-[A-Za-z0-9_-]{8,}`,
   String.raw`sk-(?:proj-)?[A-Za-z0-9_-]{8,}`,
   String.raw`github_pat_[A-Za-z0-9_]{20,}`,

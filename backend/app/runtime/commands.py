@@ -200,8 +200,7 @@ async def _compact(ctx: CommandContext) -> str | None:
     try:
         outcome = await fold_session(ctx.session_id, ctx.settings, announce=announce)
     except CommandError as exc:
-        # Announced as a normal step, not an error frame: the turn itself is
-        # fine, only this command could not do its job.
+        # Report command failure as a step; the turn itself remains valid.
         await ctx.emit(str(exc), {"type": "system", "extra_type": "compaction_skipped"})
         return None
 

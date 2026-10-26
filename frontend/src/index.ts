@@ -78,8 +78,7 @@ const server = Bun.serve<UpgradeData>({
   async fetch(req, server) {
     const url = new URL(req.url);
 
-    // WebSocket: upgrade locally, then bridge to the backend so the browser
-    // only ever sees one origin.
+    // Proxy WebSockets locally so the browser uses one origin.
     if (url.pathname === "/api/ws/chat") {
       const ok = server.upgrade(req, { data: { url: url.pathname + url.search } });
       return ok ? undefined : new Response("Upgrade failed", { status: 400 });
@@ -89,8 +88,7 @@ const server = Bun.serve<UpgradeData>({
       return proxy(req, url);
     }
 
-    // Built bundles live under .dev-build; serve them directly so a page load
-    // costs one build, not one build per asset request.
+    // Serve cached dev assets directly instead of rebuilding per request.
     if (url.pathname.startsWith("/assets/")) {
       const asset = Bun.file(path.join(DEV_OUT, url.pathname.slice("/".length)));
       if (await asset.exists()) {
@@ -140,9 +138,7 @@ async function renderIndex(): Promise<Response> {
 
 async function buildOnce(): Promise<Response> {
   const result = await Bun.build({
-    // The HTML entry alone can emit the app script as a *chunk* instead of an
-    // entry-point, which leaves index.html pointing at an empty shell. Adding
-    // the TSX entry guarantees a real entry-point is produced.
+    // Add the TSX entry so index.html references a real bundle entry.
     entrypoints: [path.join(ROOT, "index.html"), path.join(ROOT, "src", "main.tsx")],
     outdir: DEV_OUT,
     plugins: [(await import("bun-plugin-tailwind")).default],
@@ -234,8 +230,7 @@ async function proxy(req: Request, url: URL): Promise<Response> {
 console.log(`AmritaAgent dev server: ${server.url}`);
 console.log(`/api proxied to ${API_TARGET}`);
 
-// Pre-build so the first page load is instant. Failures are reported on the
-// next request instead of aborting the server.
+// Pre-build for a fast first load and report failures on the next request.
 renderIndex()
   .then(() => console.log("ready"))
   .catch((error) => console.error("initial build failed:", error));

@@ -1,8 +1,4 @@
-# Start the backend (serves the built frontend from frontend/dist).
-#
-#   powershell -ExecutionPolicy Bypass -File scripts/start.ps1
-#
-# Pass -Dev to only run the API (frontend via `bun run dev`).
+# Start the backend and serve frontend/dist; use -Dev for API-only mode.
 
 param(
     [switch]$Dev

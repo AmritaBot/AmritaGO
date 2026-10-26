@@ -44,9 +44,7 @@ function Button({
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & { asChild?: boolean }) {
   const Comp = asChild ? Slot : "button";
-  // An icon-only button is unreadable on hover: ``aria-label`` is announced by
-  // a screen reader but never shown to a mouse user, so mirror it into ``title``.
-  // An explicit title always wins, and a button with visible text needs neither.
+  // Mirror icon-button aria labels into title for mouse users.
   const tooltip =
     props.title ??
     (typeof props["aria-label"] === "string" ? props["aria-label"] : undefined);

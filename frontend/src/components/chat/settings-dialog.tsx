@@ -83,8 +83,7 @@ export function SettingsDialog({
   const [loading, setLoading] = useState(false);
   const [mcpDraft, setMcpDraft] = useState({ name: "", transport: "" });
 
-  // The caller asks for a tab ("go configure the model"), so honour it every
-  // time the dialog is opened rather than only on first mount.
+  // Select the requested tab on every dialog open.
   useEffect(() => {
     if (open) setActiveTab(tab);
   }, [open, tab]);
@@ -107,8 +106,7 @@ export function SettingsDialog({
       setSkills(skillList.skills);
       setSkillDirs(skillList.directories);
       setServers(mcpList.servers);
-      // Built-ins arrive in ``agents`` now; only prepend the fallback entry when
-      // the list does not already carry a preset with that name.
+      // Add the built-in fallback only when the agent list omits it.
       setAgents(
         agentList.agents.some((agent) => agent.name === agentList.builtin.name)
           ? agentList.agents
@@ -220,8 +218,7 @@ export function SettingsDialog({
             <TabsList
               className={cn(
                 "w-full shrink-0",
-                // Six tabs do not fit on a phone; let the row scroll instead of
-                // squeezing every label.
+                // Let tabs scroll on phones instead of squeezing their labels.
                 "max-sm:h-auto max-sm:justify-start max-sm:overflow-x-auto",
                 "max-sm:[&_[role=tab]]:flex-none max-sm:[&_[role=tab]]:px-3 max-sm:[&_[role=tab]]:py-2 max-sm:[&_[role=tab]]:text-[15px]",
               )}

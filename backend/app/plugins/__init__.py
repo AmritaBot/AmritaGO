@@ -425,8 +425,7 @@ class PluginRuntime:
             module=module,
         )
         previous = self._specs.get(resolved)
-        # A file reload replaces the function object in the same module; only a
-        # different module claiming the name is worth a warning.
+        # Warn only when a different module claims an existing plugin name.
         if previous is not None and previous.module != spec.module:
             logger.warning(
                 f"Plugin '{resolved}' is being replaced by {module or 'an external module'}"
@@ -615,12 +614,10 @@ async def sync_plugin_states(settings: Any) -> Any:
 
     if settings.enabled_plugins is None:
         if settings.disabled_plugins or PATHS.settings.is_file():
-            # An install from before the allow-list existed: keep whatever was
-            # already registered enabled, minus the legacy disabled set.
+            # Migrate legacy settings while preserving registered plugins.
             enabled = [name for name in names if name not in set(settings.disabled_plugins)]
         else:
-            # Fresh install: bundled plugins are part of the app; anything
-            # already sitting in the user plugin directory is user-added.
+            # Enable bundled plugins by default on fresh installs.
             enabled = [spec.name for spec in specs if _bundled(spec)]
         settings.enabled_plugins = enabled
         changed = True
@@ -659,8 +656,7 @@ def load_external_plugins(runtime: PluginRuntime, directory: Path | None = None)
             continue
         module_name = f"amrita_go_plugin_{path.stem}"
         try:
-            # A fresh module every time: ``importlib.reload`` cannot find a spec
-            # for file-loaded modules.
+            # Recreate file-loaded modules because reload requires an import spec.
             module_spec = importlib.util.spec_from_file_location(module_name, path)
             if module_spec is None or module_spec.loader is None:
                 raise ImportError("cannot build an import spec")

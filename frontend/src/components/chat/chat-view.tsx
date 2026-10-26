@@ -175,8 +175,7 @@ function UserMessageBody({ content }: { content: string }) {
   const [collapsed, setCollapsed] = useState(false);
   const body = useRef<HTMLDivElement>(null);
 
-  // `scrollHeight` reports the full content even while the box is clamped, so
-  // this only has to run when the text changes.
+  // Use scrollHeight to detect overflow in the clamped message.
   useLayoutEffect(() => {
     const element = body.current;
     if (!element) return;
@@ -522,8 +521,7 @@ export function ChatView({
   const [permission, setPermission] = useState<Permission>("workspace");
   //: The tool call the user asked to cancel; the dialog collects the reason.
   const [cancelTarget, setCancelTarget] = useState<RunningTool | null>(null);
-  //: Commands the backend intercepts. Fetched instead of hard-coded, so a
-  //: plugin's command shows up without a front-end change.
+  //: Fetch backend commands so plugin commands need no frontend changes.
   const [commands, setCommands] = useState<CommandOption[]>([]);
   const [pending, setPending] = useState<PendingAttachment[]>([]);
   const [uploading, setUploading] = useState(0);
@@ -531,8 +529,7 @@ export function ChatView({
   const stickToBottom = useRef(true);
   const [showJump, setShowJump] = useState(false);
 
-  // Which modes the active preset allows, and therefore which ones the chip
-  // may offer. A read-only preset collapses it to a locked label.
+  // Offer only preset-approved modes; read-only presets show a locked label.
   const allowedPermissions = useMemo<Permission[]>(() => {
     const declared = agents.find((item) => item.name === activeAgent)?.access;
     if (!declared || declared.length === 0) return ACCESS_ORDER;
@@ -580,9 +577,7 @@ export function ChatView({
     if (!activeModel) {
       return { blocked: "还没有选中模型。", needsModel: true };
     }
-    // A missing API key is not a blocker: some providers (a local gateway, an
-    // intranet service) legitimately run without one. The provider screen warns
-    // about it; sending anyway lets those setups work.
+    // Allow keyless local providers; the provider screen handles the warning.
     if (uploading > 0) {
       return { blocked: `正在上传附件（${uploading}）…`, needsModel: false };
     }
@@ -672,8 +667,7 @@ export function ChatView({
     };
   }, []);
 
-  // The sidebar marks which conversations are working. ``busy`` covers this one
-  // while it is open; a background session is picked up by App's poll instead.
+  // Report this session's busy state; App polls background sessions.
   useEffect(() => {
     onRunningChange?.(busy);
   }, [busy, onRunningChange]);
@@ -758,8 +752,7 @@ export function ChatView({
               onBranch={onBranch}
               runningTools={runningTools}
               onCancelTool={setCancelTarget}
-              // Only a finished, failed turn can be retried: a live one is
-              // stopped first, and ``send`` refuses while the socket is busy.
+              // Allow retry only after a failed turn has finished.
               onRetry={message.error && !busy ? retry : undefined}
             />
           ))}
@@ -821,9 +814,7 @@ export function ChatView({
             void configureModel(key, patch);
           }}
           onCommand={(name) => {
-            // Client-side commands only: permission/agent open a popover inside
-            // the composer, and everything the backend intercepts (``/compact``,
-            // plugin commands) is sent as a message by the composer itself.
+            // Handle local commands here; the composer sends backend commands as messages.
             if (name === "model") onOpenSettings("providers");
             if (name === "blocked") toast.error(guard.blocked ?? "无法发送");
           }}

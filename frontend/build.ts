@@ -61,15 +61,11 @@ const result = await Bun.build({
   plugins: [plugin],
   minify: true,
   target: "browser",
-  // Source maps are ~16 MiB — two thirds of the bundle — and mean nothing to a
-  // shipped SPA, so they are opt-in: set AMRITA_GO_SOURCEMAP=1 to debug a
-  // production build.
+  // Enable large production source maps only when AMRITA_GO_SOURCEMAP is set.
   sourcemap: process.env.AMRITA_GO_SOURCEMAP ? "linked" : "none",
   splitting: true,
   tsconfig: path.join(root, "tsconfig.json"),
-  // Hashed bundles go under assets/ (the backend mounts that directory). The
-  // HTML entry is moved to the dist root afterwards, because Bun does not let
-  // the naming rule apply to it separately.
+  // Put hashed assets under assets/ and keep the HTML entry at the dist root.
   naming: {
     entry: "assets/[name]-[hash].[ext]",
     chunk: "assets/[name]-[hash].[ext]",

@@ -131,8 +131,7 @@ export function CoreConfigEditor() {
     }
   };
 
-  // Behaviour-changing options live in their own section, not interleaved with
-  // the knobs one looks at to make a run cheaper.
+  // Keep behavior-changing options separate from cost-tuning controls.
   const safeFields = useMemo(
     () => (config?.fields ?? []).filter((field) => !field.unsafe),
     [config],

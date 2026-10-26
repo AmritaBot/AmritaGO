@@ -221,14 +221,16 @@ name: {name}
 title: {title}
 description: ""
 icon: bot
-# Tool name globs. Omit to allow every tool, [] to allow none.
+# Restrict tools with name globs; omit to allow all or use [] to allow none.
 tools:
 # Access modes: readonly / workspace / full. Omit to allow all three.
 access:
-# Workflow this preset runs (see /api/workflows). Leave it out to follow the
-# globally active workflow instead of pinning one.
+# Choose a workflow or inherit the global setting.
+
 # workflow: react
-# Session scratch directory for plans and notes: `session`, or omit for none.
+
+# Set a session scratch directory for plans and notes, or omit it.
+
 # memory: session
 ---
 你是 {title}。
@@ -1064,9 +1066,7 @@ async def reconnect_mcp(name: str) -> dict[str, Any]:
 @app.get(f"{API}/sessions")
 async def get_sessions(include_archived: bool = False) -> dict[str, Any]:
     metas = await list_sessions(include_archived=include_archived)
-    # ``running`` is computed, never stored: it is true while a turn for that
-    # session is still alive in this process. The sidebar uses it to show which
-    # conversations are working, including ones the user is not looking at.
+    # Compute running status from active turns; it is not persisted.
     return {"sessions": [{**meta.model_dump(), "running": HUB.busy(meta.id)} for meta in metas]}
 
 
@@ -1076,8 +1076,7 @@ async def post_session(payload: SessionCreateRequest) -> dict[str, Any]:
     meta = await create_session(
         title=payload.title,
         preset=payload.preset,
-        # Snapshot the defaults so this conversation keeps its own directory and
-        # agent even after the defaults move on.
+        # Snapshot defaults so this session remains independent of later changes.
         workspace=payload.workspace or settings.active_workspace,
         agent=payload.agent or settings.active_agent,
     )
@@ -1183,8 +1182,7 @@ async def compact_session_endpoint(session_id: str) -> dict[str, Any]:
     try:
         outcome = await fold_session(session_id, settings)
     except CommandError as exc:
-        # 409 for "no model configured", 502 for a provider failure: the message
-        # already says which, and the UI shows it verbatim.
+        # Preserve provider errors and their status codes for the UI.
         status = 502 if str(exc).startswith("压缩失败") else 409
         raise HTTPException(status_code=status, detail=str(exc)) from exc
     return {
@@ -1438,8 +1436,7 @@ async def chat_socket(websocket: WebSocket) -> None:
                 continue
 
             if kind == "tool_cancel":
-                # The reason is fed back to the model, so it may retry a
-                # different way instead of repeating the cancelled call.
+                # Pass the cancellation reason to the model so it can choose another approach.
                 ok = TOOLS.cancel(
                     str(payload.get("tool_id") or ""),
                     str(payload.get("reason") or ""),
@@ -1477,20 +1474,14 @@ async def chat_socket(websocket: WebSocket) -> None:
                 continue
 
             settings = await load_settings()
-            # Workspace and agent belong to the conversation, not to the
-            # process: two sessions can run in parallel in different
-            # directories. The session's own values win, then the explicit
-            # payload (a one-off override), then the global default for
-            # sessions created before this was per-session.
+            # Resolve session settings before one-off overrides and global defaults.
             run_settings = settings.model_copy(
                 update={
                     "active_workspace": meta.workspace or settings.active_workspace,
                     "active_agent": meta.agent or settings.active_agent,
                 }
             )
-            # A registered slash command is answered by the runtime itself: no
-            # preset, no key, no tools. Checking the model first would make
-            # ``/help`` unreachable exactly when it is most useful.
+            # Handle registered commands before checking model availability.
             resolved: ModelPreset | None = None
             if COMMANDS.match(message) is None:
                 model_key = payload.get("model") or settings.active_model

@@ -173,8 +173,7 @@ export function TerminalPanel() {
 
   useEffect(() => {
     void reload();
-    // Sessions only change when a command runs, which the user does from the
-    // chat; a slow poll is enough and avoids a second event channel.
+    // Poll slowly because sessions change only when a chat command runs.
     const timer = window.setInterval(() => void reload(), 4000);
     return () => window.clearInterval(timer);
   }, [reload]);

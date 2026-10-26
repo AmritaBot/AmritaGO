@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Start the backend (serves the built frontend from frontend/dist).
-#
-#   bash scripts/start.sh          # build frontend if needed, then serve all
-#   bash scripts/start.sh --dev    # API only; run `bun run dev` for the UI
+
+# Start the backend and serve frontend/dist; --dev runs the API only.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

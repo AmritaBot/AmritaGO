@@ -1,11 +1,4 @@
-/**
- * Agent preset editor.
- *
- * The file on disk is the source of truth, so this edits raw Markdown rather
- * than a form that tries to re-serialize it. The backend validates before
- * writing, which keeps a half-finished YAML block from making the preset
- * silently disappear from the list.
- */
+/** Edit raw agent preset Markdown; the backend validates it before saving. */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -78,9 +71,7 @@ export function AgentEditor({
   mcp: MCPSource[];
   onChanged: () => void;
 }) {
-  // Every preset is listed, built-ins included: they are what a fresh install
-  // runs, and hiding them made the app look like it had no default mode. A
-  // file with the same name shadows a built-in rather than replacing it.
+  // Show built-ins; a same-named file shadows rather than replaces one.
   const listed = useMemo(() => {
     const builtin = agents.filter((agent) => agent.scope === "builtin");
     const others = agents.filter((agent) => agent.scope !== "builtin");
@@ -107,8 +98,7 @@ export function AgentEditor({
       setDraft(loaded.raw);
       setDirty(false);
       if (loaded.unknown_tools?.length) {
-        // Console echo: the same fact the banner shows, where a preset author
-        // is likely to be looking while editing YAML.
+        // Log unmatched tool rules where preset authors can find them.
         console.warn(
           `[agent] 预设 ${loaded.name} 的 tools 规则没有匹配到任何工具：`,
           loaded.unknown_tools,

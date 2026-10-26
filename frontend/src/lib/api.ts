@@ -616,8 +616,7 @@ async function errorMessage(response: Response): Promise<string> {
     const parsed = JSON.parse(body) as { detail?: unknown; error?: unknown };
     const detail = parsed.detail ?? parsed.error;
     if (typeof detail === "string" && detail.trim()) return detail;
-    // A validation error is a list of field/location objects; one line each is
-    // still better than a wall of JSON.
+    // Format validation errors as concise, readable lines.
     if (Array.isArray(detail)) {
       const lines = detail
         .map((item) => (item as { msg?: string }).msg)
@@ -642,8 +641,7 @@ export const api = {
       body: JSON.stringify(patch),
     }),
 
-  // presets
-  // providers & models
+  // Presets, providers, and models.
   listProviders: () =>
     request<{
       active: string | null;

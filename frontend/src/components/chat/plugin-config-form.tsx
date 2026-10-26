@@ -68,8 +68,7 @@ export function PluginConfigForm({ plugin }: { plugin: string }) {
       const parsed = parseConfigError(error);
       setErrors(parsed.errors);
       toast.error(parsed.message);
-      // A stale hash means someone else wrote first; reloading shows what they
-      // saved and gives the user a chance to re-apply their edit deliberately.
+      // Reload the winning config so the user can deliberately reapply edits.
       if (parsed.errors.length === 0) void reload();
     } finally {
       setSaving(false);

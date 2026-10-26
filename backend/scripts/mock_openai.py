@@ -39,8 +39,7 @@ REPLY = (
     "  B --> C[StreamChannel]\n```\n"
 )
 
-# Tools the agent adds itself; the mock picks a real tool when possible so the
-# tool-call path gets exercised.
+    # Prefer a real tool so the mock exercises the tool-call path.
 INTERNAL_TOOLS = {"agent_stop", "processing_message", "update_step"}
 
 

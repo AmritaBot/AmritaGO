@@ -69,8 +69,7 @@ def _terminate(proc: asyncio.subprocess.Process) -> None:
         else:
             os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
     except OSError:
-        # Already gone, or a process group we may not signal: fall back to the
-        # direct child, which is the best remaining option.
+        # Fall back to killing the child when its process group is unavailable.
         try:
             proc.kill()
         except ProcessLookupError:
@@ -574,8 +573,7 @@ class ShellSession:
                     stderr=asyncio.subprocess.STDOUT,
                     cwd=native_cwd,
                     env=env,
-                    # Own session, so cancelling the call can kill the whole
-                    # tree instead of orphaning the command's children.
+                    # Start a new session so cancellation can terminate the command tree.
                     start_new_session=os.name != "nt",
                 )
             except OSError as exc:
@@ -598,8 +596,7 @@ class ShellSession:
                 _terminate(proc)
                 raw, _ = await proc.communicate()
             except asyncio.CancelledError:
-                # The user cancelled this tool call (or stopped the turn): stop
-                # the command too, then let the cancellation keep unwinding.
+                # Stop the process on cancellation, then propagate the cancellation.
                 _terminate(proc)
                 raise
             finally:

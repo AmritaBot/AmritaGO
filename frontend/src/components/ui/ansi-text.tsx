@@ -216,8 +216,7 @@ export function AnsiText({
       segment.style.inverse,
   );
   if (!styled) {
-    // The codes were consumed but nothing was ever styled (e.g. only ``ESC[0m``
-    // resets): return the text without them, never the raw escapes.
+    // Strip consumed ANSI codes when they produced no styling.
     return <span className={className}>{segments.map((s) => s.text).join("")}</span>;
   }
   return (

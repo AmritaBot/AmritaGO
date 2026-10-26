@@ -96,8 +96,7 @@ export function PluginPanel({
       setListing(flow);
       toast.success(`已切换到工作流 ${name}`);
     } catch (error) {
-      // The backend refuses when the active preset pins a different workflow;
-      // its message explains why, so show it instead of a generic failure.
+      // Show the backend explanation when the active preset pins a workflow.
       toast.error(error instanceof Error ? error.message : String(error));
     }
   };
@@ -364,9 +363,7 @@ export function PluginPanel({
                     </Button>
                   )}
                   {plugin.protected ? (
-                    // Not a disabled switch: a locked one. The backend refuses
-                    // this write, so offering a control that errors is worse
-                    // than saying up front that it is not yours to turn off.
+                    // Show protected plugins as locked instead of offering a rejected toggle.
                     <span
                       className={cn(
                         "flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground",
@@ -379,9 +376,7 @@ export function PluginPanel({
                     </span>
                   ) : (
                     <Switch
-                      // Right-most control, so it sits on the row's own edge:
-                      // a switch floating in the middle of a row reads as a
-                      // different column from the switches in the rows above.
+                      // Align the switch to the row edge for consistent layout.
                       className={cn(!(plugin.has_config && enabled) && "ml-auto")}
                       checked={enabled}
                       aria-label={`启用 ${plugin.name}`}

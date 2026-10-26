@@ -85,8 +85,7 @@ const KEYWORDS: Record<string, Set<string>> = {
 /** Which keyword table a fence language should use. */
 function family(language: string): keyof typeof KEYWORDS | "html" | "css" | "none" {
   const lang = language.toLowerCase();
-  // ``jsx``/``tsx`` are deliberately *not* markup here: the file is 90% script,
-  // and running the tag scanner over it would paint every brace as plain text.
+  // Highlight JSX/TSX as script because most of the file is code.
   if (["html", "htm", "xml", "svg", "vue"].includes(lang)) return "html";
   if (["css", "scss", "less"].includes(lang)) return "css";
   if (["sql"].includes(lang)) return "sql";
@@ -159,8 +158,7 @@ function scanScript(code: string, keywords: Set<string>): Token[] {
           cursor += 1;
           break;
         }
-        // An unterminated string stops at the newline: the block is streamed,
-        // and eating the rest of the answer is worse than a partial token.
+        // Stop unterminated strings at newlines to preserve following text.
         if (rest[cursor] === "\n") break;
         cursor += 1;
       }
@@ -227,8 +225,7 @@ function scanMarkup(code: string): Token[] {
         let attr: RegExpExecArray | null;
         while ((attr = attrRe.exec(body)) !== null) {
           push(out, "plain", body.slice(consumed, attr.index));
-          // The leading whitespace is part of the match, so it has to be
-          // re-emitted: dropping it renders ``<html lang>`` as ``<htmllang>``.
+          // Re-emit matched whitespace so highlighted HTML tags remain intact.
           push(out, "plain", attr[1]);
           push(out, "attr", attr[2]);
           if (attr[3]) push(out, "punct", attr[3]);

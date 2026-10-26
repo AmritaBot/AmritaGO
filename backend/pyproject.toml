@@ -15,8 +15,7 @@ dependencies = [
   "faskill[amrita]>=0.3.0",
 ]
 license = "AGPL-3.0-or-later"
-# Hatchling only packs files under backend/, so the build copies the
-# repository's LICENSE in (scripts/package.sh) and removes it afterwards.
+# Stage the repository LICENSE because Hatchling only packages backend files.
 license-files = ["LICENSE"]
 
 [project.optional-dependencies]
@@ -29,8 +28,7 @@ amrita-go = "app.__main__:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-# Builds frontend/dist when missing and ships it as app/_frontend, so the
-# installed wheel can serve the SPA without the frontend sources.
+# Bundle frontend assets so the installed wheel can serve the SPA.
 [tool.hatch.build.hooks.custom]
 path = "hatch_build.py"
 

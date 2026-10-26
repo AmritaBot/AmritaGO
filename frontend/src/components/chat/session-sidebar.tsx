@@ -281,8 +281,7 @@ export function SessionSidebar({
                   running={runningIds.includes(session.id)}
                   onSelect={() => onSelect(session.id)}
                   onRename={(title) => onRename(session.id, title)}
-                  // Restoring is the undo of the action that needed confirming,
-                  // so it runs straight away.
+                  // Restore immediately because it simply undoes archiving.
                   onArchive={() => onArchive(session.id, false)}
                   onDelete={() => setPending({ session, kind: "delete" })}
                   onBranch={() => onBranch(session)}

@@ -70,15 +70,12 @@ function FencedCode({ className, children }: { className?: string; children?: Re
 }
 
 const components: Components = {
-  // ``pre`` is rendered by :class:`CodeBlock` itself, so the default wrapper
-  // (which would nest a second ``pre`` around it) is suppressed here.
+  // Suppress the default pre wrapper because CodeBlock renders it.
   pre({ children }) {
     return <>{children}</>;
   },
   code({ className, children, ...props }) {
-    // A fenced block has a ``language-*`` class *or* spans lines; inline code
-    // has neither. Testing the class alone would mis-style a fence written
-    // without a language.
+    // Detect fenced code by language class or multiline content.
     const isFenced =
       /language-/.test(className ?? "") || String(children).includes("\n");
     if (isFenced) {
@@ -116,8 +113,7 @@ function maskChildren(children: ReactNode): ReactNode {
   return children;
 }
 
-// Every element markdown can put a raw text node inside. Kept as a list so a
-// new tag is one entry rather than a hand-written copy of the default renderer.
+// Keep text-capable markdown tags in one extensible list.
 const TEXT_TAGS = [
   "p",
   "li",

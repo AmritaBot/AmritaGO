@@ -1,16 +1,6 @@
 #!/usr/bin/env bash
-# Build the distributable artifacts (sdist + wheel) with the licence included.
-#
-# Hatchling only packs what is under backend/, so the repository's LICENSE has
-# to exist there while building. This script copies it in, builds, verifies the
-# artifacts, and removes the copy on exit — including when the build fails, so
-# the working tree is never left with a duplicate.
-#
-#   bash scripts/package.sh                  # build frontend, then sdist + wheel
-#   bash scripts/package.sh --skip-frontend  # reuse frontend/dist as it is
-#
-# Artifacts land in dist/ (repository root in a uv workspace, backend/dist
-# otherwise); the verification step looks in both.
+
+# Build sdist and wheel, temporarily staging LICENSE; --skip-frontend reuses frontend/dist.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -113,8 +103,7 @@ for path in sorted(found, key=lambda item: item.stat().st_mtime):
         problems.append(f"{path.name}: LICENSE is not packaged")
     if "License-File: LICENSE" not in metadata:
         problems.append(f"{path.name}: METADATA has no License-File")
-    # A stray node_modules would multiply the artifact size; fail loudly instead
-    # of shipping it.
+    # Fail if node_modules would inflate the package.
     stray = [name for name in names if "node_modules" in name]
     if stray:
         problems.append(f"{path.name}: {len(stray)} node_modules entries packaged")

@@ -18,10 +18,7 @@ function DialogOverlay({
       data-slot="dialog-overlay"
       className={cn(
         "fixed inset-0 z-50 bg-black/50 backdrop-blur-[2px]",
-        // No exit animation: Radix unmounts on ``animationend``, and a stalled
-        // exit animation leaves an invisible-but-present overlay over the app.
-        // Opening animates; closing is immediate, which is also what a
-        // full-screen page should do.
+        // Disable exit animation to prevent a stalled overlay from blocking the app.
         "data-[state=open]:animate-in data-[state=open]:fade-in-0",
         "data-[state=closed]:animate-none data-[state=closed]:opacity-0",
         className,
@@ -47,8 +44,7 @@ function DialogContent({
         className={cn(
           "fixed top-1/2 left-1/2 z-50 flex w-full max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-xl border border-border bg-card p-6 shadow-lg",
           "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
-          // A closed dialog must be gone, not merely transparent: an element
-          // stuck at 95% scale used to keep covering the page.
+          // Unmount closed dialogs so invisible overlays cannot block the page.
           "data-[state=closed]:animate-none data-[state=closed]:opacity-0 data-[state=closed]:pointer-events-none",
           className,
         )}

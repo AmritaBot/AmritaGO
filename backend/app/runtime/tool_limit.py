@@ -162,8 +162,7 @@ class LimitAwareStrategy(ReActAgentStrategy):
             }
         )
         task = asyncio.create_task(super().call_tool(tool_call))
-        # ``aborted`` means the turn itself was stopped; the UI never sees it,
-        # but it keeps the published outcome honest.
+        # Preserve the aborted outcome in the published result.
         outcome = "aborted"
         loop = asyncio.get_running_loop()
         deadline = None if timeout <= 0 else loop.time() + timeout
@@ -177,10 +176,7 @@ class LimitAwareStrategy(ReActAgentStrategy):
                 )
                 if done:
                     break
-                # Nothing finished in time. If the call is parked on a
-                # confirmation, the clock is measuring a person reading, not a
-                # tool working — restart it and keep waiting. Approval has no
-                # deadline of its own; only execution does.
+                # Pause the execution timeout while a human confirmation is pending.
                 if BROKER.parked(self._session_id()):
                     deadline = None if timeout <= 0 else loop.time() + timeout
                     continue
@@ -188,8 +184,7 @@ class LimitAwareStrategy(ReActAgentStrategy):
                 await _abandon(task)
                 return await self._tool_timed_out(tool_call, timeout)
             if task in done:
-                # ``result()`` re-raises the tool's own failure, which the
-                # framework turns into an ``ERR:`` tool result.
+                # Let the framework convert the re-raised tool failure into a result.
                 failed = task.cancelled() or task.exception() is not None
                 outcome = "failed" if failed else "done"
                 return task.result()

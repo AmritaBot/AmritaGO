@@ -16,8 +16,7 @@ import { cn } from "@/lib/utils";
 function SecretToken({ value }: { value: string }) {
   const masked = maskSecret(value);
   return (
-    // `tabIndex` rather than a <button>: this gets injected into arbitrary
-    // inline positions, including inside links, where a button is invalid.
+    // Use tabIndex so the inline control remains valid inside links.
     <span className="group/secret relative inline">
       <span
         tabIndex={0}

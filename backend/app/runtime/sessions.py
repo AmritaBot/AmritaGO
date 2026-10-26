@@ -35,8 +35,7 @@ class SessionMeta(BaseModel):
     updated_at: float = Field(default_factory=time.time)
     preset: str | None = None
     agent: str | None = None
-    # Directory this conversation works in. ``None`` falls back to the global
-    # default, which is what a session created before this field existed gets.
+    # Use the global workspace when this session has no stored workspace.
     workspace: str | None = None
     message_count: int = 0
     usage: UsageTotals = Field(default_factory=UsageTotals)
@@ -270,9 +269,7 @@ async def branch_session(
         for entry in keep:
             if entry.role not in {"user", "assistant"} or not entry.content.strip():
                 continue
-            # Slash commands are UI-only: they were never in the model's context,
-            # so replaying them here would feed the branch a conversation the
-            # original never had.
+            # Exclude UI-only commands when rebuilding a branch's model context.
             if entry.workflow == "command":
                 continue
             role: Literal["user", "assistant"] = "user" if entry.role == "user" else "assistant"

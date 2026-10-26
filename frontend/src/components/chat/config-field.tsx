@@ -46,10 +46,7 @@ export function ConfigField({
               </span>
             )}
             {field.source === "default" && (
-              // Not "the value happens to equal the default": the key is
-              // absent from the file, so this is what the library would use.
-              // Saying so is the difference between "I chose this" and "I
-              // never set it".
+              // Explain that the key is absent, so this value comes from the library default.
               <span
                 className="ml-1.5 rounded bg-muted px-1 py-0.5 align-middle text-[10px] font-medium text-muted-foreground"
                 title="配置文件里没有这一项，显示的是当前 AmritaCore 的默认值"

@@ -23,8 +23,7 @@ from typing import Any
 
 
 def build_parser() -> argparse.ArgumentParser:
-    # ``SUPPRESS`` keeps a subparser from overwriting a flag given before the
-    # subcommand with its own default (the classic ``parents=`` gotcha).
+    # SUPPRESS preserves flags supplied before the subcommand.
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--host", default=argparse.SUPPRESS, help="监听地址（覆盖 AMRITA_GO_HOST）")
     common.add_argument(
@@ -281,8 +280,7 @@ def rotate_key(args: argparse.Namespace) -> int:
         try:
             plaintext[path] = Fernet(old).decrypt(path.read_bytes())
         except (InvalidToken, OSError) as exc:
-            # Stop before touching anything: a half-rotated store is worse than
-            # an unchanged one.
+            # Abort before changes if the store cannot be rotated completely.
             print(f"无法用当前密钥解密 {path}：{exc}\n未做任何改动。", file=sys.stderr)
             return 1
 
@@ -297,8 +295,7 @@ def rotate_key(args: argparse.Namespace) -> int:
             return 1
 
     new = new_key()
-    # Encrypt everything to temporary files first: if this fails, the old key and
-    # every credential file are still untouched.
+    # Stage encrypted credentials before replacing the old key or files.
     staged: list[tuple[Path, Path]] = []
     try:
         for path, payload in plaintext.items():

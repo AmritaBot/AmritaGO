@@ -29,8 +29,7 @@ jobs:
           cd frontend
           bun install --frozen-lockfile
 
-      # The wheel embeds frontend/dist as app/_frontend (see backend/hatch_build.py).
-      # The script also stages LICENSE for hatchling and verifies the artifacts.
+      # Bundle frontend assets and LICENSE, then verify the wheel artifacts.
       - name: Build frontend and package
         run: bash scripts/package.sh
 

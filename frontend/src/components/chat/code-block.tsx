@@ -1,19 +1,4 @@
-/**
- * Fenced code blocks: language label, copy, download, and "run" for HTML.
- *
- * The `pre > code` output of `react-markdown` has no hooks of its own — the
- * fence info string only survives as `language-xxx` on the `code` element — so
- * the block is rebuilt from the children instead of wrapping the default one.
- * That also fixes the thing a bare `<pre>` gets wrong: it scrolls, but there is
- * no way to tell what language you are looking at or to get the text out.
- *
- * "运行" is offered for HTML only, and it renders into a sandboxed iframe via
- * `srcDoc` with `allow-scripts` but **not** `allow-same-origin`. That combination
- * is deliberate: model output is untrusted, and without `allow-same-origin` an
- * injected script runs in an opaque origin where it cannot touch the app's DOM,
- * cookies or storage. The dialog is read-only by design — no file pickers, no
- * navigator access, nothing that escapes the frame.
- */
+/** Render fenced code with copy/download controls and an isolated sandboxed HTML preview. */
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -56,8 +41,7 @@ function download(filename: string, text: string) {
   anchor.href = url;
   anchor.download = filename;
   anchor.click();
-  // Revoking immediately can cancel the download in some browsers; one tick of
-  // delay is enough and keeps the URL from leaking.
+  // Revoke the download URL on the next tick to avoid interrupting the download.
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
@@ -109,8 +93,7 @@ function HtmlPreviewButton({ code, title }: { code: string; title: string }) {
         setFullscreen(true);
       }
     } catch {
-      // Permission denied or unsupported: keep the large dialog, say nothing
-      // scary — the preview itself still works.
+      // Keep the enlarged preview when fullscreen is unavailable.
       setFullscreen((prev) => !prev);
     }
   };
@@ -122,8 +105,7 @@ function HtmlPreviewButton({ code, title }: { code: string; title: string }) {
     return () => document.removeEventListener("fullscreenchange", onChange);
   }, []);
 
-  // Closing the dialog while still in fullscreen would leave the browser in a
-  // fullscreen state with nothing on screen, so exit first.
+  // Exit fullscreen before closing the dialog.
   useEffect(() => {
     if (open || !document.fullscreenElement) return;
     void document.exitFullscreen().catch(() => undefined);
@@ -147,16 +129,11 @@ function HtmlPreviewButton({ code, title }: { code: string; title: string }) {
           className={cn(
             "flex flex-col gap-2",
             fullscreen
-              ? // A ``fixed`` element that is *also* the fullscreen element has
-                // its containing block swapped to the screen, so the base
-                // ``top-1/2 -translate-y-1/2`` centering would be applied a
-                // second time and push the content off-screen. Anchor it to
-                // the corner and drop the transform instead.
+              ? // Anchor the fullscreen dialog to a corner to avoid double-centering.
                 "top-0 left-0 h-screen w-screen max-w-none translate-x-0 translate-y-0 rounded-none border-0 p-2 shadow-none"
               : "h-[80vh] w-[min(90vw,72rem)] max-w-none",
           )}
-          // The close button would land on top of the frame's content in
-          // fullscreen; the header keeps its own controls.
+          // Hide the dialog close button because it would cover fullscreen content.
           showClose={!fullscreen}
         >
           <DialogHeader>
@@ -187,8 +164,7 @@ function HtmlPreviewButton({ code, title }: { code: string; title: string }) {
           <iframe
             title={title}
             srcDoc={code}
-            // No ``allow-same-origin``: with it, the frame could read this
-            // origin's storage and post itself messages as if it were us.
+            // Omit allow-same-origin so untrusted preview code cannot access this origin.
             sandbox="allow-scripts allow-forms allow-modals allow-popups"
             className="min-h-0 flex-1 rounded-md border border-border bg-white"
           />
@@ -211,8 +187,7 @@ export function CodeBlock({ code, language, streaming = false }: CodeBlockProps)
     [isAnsi, trimmed, language],
   );
   const lines = useMemo(() => trimmed.split("\n").length, [trimmed]);
-  // Long blocks are collapsible: a 400-line dump pushes the rest of the answer
-  // off the screen, and scrolling inside a 3-line window is worse.
+  // Collapse long code blocks to preserve space for the rest of the answer.
   const collapsible = lines > 28;
 
   const copy = async () => {

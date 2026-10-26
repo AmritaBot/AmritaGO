@@ -152,9 +152,7 @@ export function PresetEditor({
         onChange={onChange}
         extensions={extensions}
         height="100%"
-        // The component's own wrapper div is the flex child; without an
-        // explicit height it grows with the document and the rounded box clips
-        // it, leaving a long preset unscrollable.
+        // Fill the flex container so long presets remain scrollable.
         style={{ height: "100%", minHeight: 0 }}
         basicSetup={{
           lineNumbers: false,

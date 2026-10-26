@@ -31,8 +31,7 @@ class FrontendBuildHook(BuildHookInterface):
     PLUGIN_NAME = "custom"
 
     def initialize(self, version: str, build_data: dict[str, Any]) -> None:
-        # Editable installs read from the source tree anyway, so keep them lean
-        # instead of copying the bundle into site-packages on every sync.
+        # Keep editable installs lean by using the source-tree bundle.
         if version == "editable":
             return
         dist = self._dist_dir()

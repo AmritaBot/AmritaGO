@@ -51,8 +51,7 @@ export function PromptDialog({
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Every open starts clean: a stale error or the previous session's path in
-  // the field is worse than an empty box.
+  // Reset errors and paths each time the dialog opens.
   useEffect(() => {
     if (!open) return;
     setValue(initialValue);
@@ -83,8 +82,7 @@ export function PromptDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="max-w-md"
-        // Radix focuses the first focusable child, which is the close button;
-        // the field is the only thing anyone came here to touch.
+        // Focus the input because it is the dialog's primary action.
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           inputRef.current?.focus();
