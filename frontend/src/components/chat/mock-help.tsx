@@ -20,6 +20,10 @@ const TRIGGERS: { label: string; keywords: string[] }[] = [
     keywords: ["审批", "确认", "audit", "confirm"],
   },
   {
+    label: "两个审批同时排队（各自答复）",
+    keywords: ["并行审批", "多个审批", "同时审批", "parallel"],
+  },
+  {
     label: "预算询问（继续 / 收尾 / 中断）",
     keywords: ["预算", "继续迭代", "budget"],
   },

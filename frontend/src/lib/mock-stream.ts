@@ -72,6 +72,18 @@ export function isMockConfirm(requestId: string): boolean {
   return requestId.startsWith(MOCK_CONFIRM_PREFIX);
 }
 
+/**
+ * Does the prompt ask for the parallel-approval demo?
+ *
+ * Parallel tool calls park the turn more than once at a time, which is where
+ * the dialog used to lose requests: one slot, last one wins. This demo parks two
+ * so the list — and answering them independently — can be checked without a
+ * real shell.
+ */
+export function wantsParallelAuditDemo(prompt: string): boolean {
+  return /并行|parallel|多个审批|同时审批/i.test(prompt);
+}
+
 /** Does the prompt ask for the plan-panel demo? */
 export function wantsTodoDemo(prompt: string): boolean {
   return /计划|待办|todo|plan/i.test(prompt);
@@ -251,6 +263,44 @@ export function startMockTurn({
 
   if (wantsTodoDemo(prompt)) {
     schedule(() => onEvent({ type: "todos", todos: MOCK_TODOS }), 300);
+  }
+
+  if (wantsParallelAuditDemo(prompt)) {
+    // Two calls parked at once, arriving a beat apart so the list grows instead
+    // of appearing whole.
+    const stamp = Date.now();
+    const parked = [
+      {
+        title: "Agent 想执行命令",
+        command: "du -sh ~/projects/*",
+        cwd: "/home/user",
+        output: "",
+      },
+      {
+        title: "Agent 想执行命令",
+        command: "rm -rf ~/.cache/build",
+        cwd: "/home/user",
+        output: "$ du -sh ~/.cache/build\n1.2G\t/home/user/.cache/build\n",
+      },
+    ];
+    parked.forEach((item, index) => {
+      schedule(
+        () =>
+          onEvent({
+            type: "confirm",
+            request_id: `${MOCK_CONFIRM_PREFIX}${stamp}-${index}`,
+            title: item.title,
+            command: item.command,
+            cwd: item.cwd,
+            shell: "unix/bash",
+            hint: "两个工具同时在等确认：可以分开批准或拒绝，全部答复后这一轮才继续。",
+            output: item.output,
+            timeout: 180,
+          }),
+        420 + index * 260,
+      );
+    });
+    return;
   }
 
   if (wantsAuditDemo(prompt)) {
@@ -656,12 +706,15 @@ export function finishMockAudit({
   command,
   reason,
   original,
+  final = true,
 }: {
   onEvent: (event: StreamEvent) => void;
   approved: boolean;
   command: string;
   reason: string;
   original: string;
+  /** ``false`` when other fabricated requests are still parked. */
+  final?: boolean;
 }): void {
   const edited = approved && command.trim() !== original.trim();
   onEvent({
@@ -673,8 +726,14 @@ export function finishMockAudit({
       type: "function_call",
       function_name: "unix_run",
       arguments: { command: approved ? command : original },
+      // ``is_done`` is what turns the row from 未返回 into 完成.
+      is_done: true,
+      result: approved ? "exit 0" : "用户拒绝执行",
     },
   });
+  // Several requests parked at once answer independently: this one records its
+  // outcome, and the last answer is what closes the turn.
+  if (!final) return;
   const body = approved
     ? [
         `已按${edited ? "修改后的" : ""}命令执行：`,

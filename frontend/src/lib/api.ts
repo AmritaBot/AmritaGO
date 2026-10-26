@@ -551,7 +551,8 @@ export type StreamEvent =
   | { type: "reasoning"; text: string }
   | { type: "meta"; content: string; metadata: Record<string, unknown> }
   | ({ type: "confirm" } & ConfirmRequest)
-  | { type: "confirm_closed"; request_id: string }
+  // ``status`` says what ended the request: answered, timed_out or cancelled.
+  | { type: "confirm_closed"; request_id: string; status?: string }
   | ({ type: "limit" } & ToolLimitRequest)
   | ({ type: "tool_running" } & RunningTool)
   | { type: "tool_finished"; tool_id: string; outcome: ToolOutcome }

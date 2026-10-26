@@ -506,7 +506,7 @@ export function ChatView({
     totals,
     lastUsage,
     contextMessages,
-    pendingConfirm,
+    pendingConfirms,
     todos,
     clearTodos,
     sendConfirm,
@@ -832,7 +832,7 @@ export function ChatView({
           }}
         />
       </div>
-      <AuditDialog request={pendingConfirm} onSubmit={sendConfirm} />
+      <AuditDialog requests={pendingConfirms} onSubmit={sendConfirm} />
       <PromptDialog
         open={cancelTarget !== null}
         onOpenChange={(open) => {

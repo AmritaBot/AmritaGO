@@ -1235,6 +1235,25 @@ async def close_shell(session_id: str) -> dict[str, Any]:
 # Chat over WebSocket
 
 
+def _forwardable(line: str) -> bool:
+    """Whether a buffered event is still meaningful to a client that reconnects.
+
+    A ``confirm`` is a question, and a question whose caller has already moved
+    on is not history — replaying it would pop a dialog that can only answer
+    "已过期". Everything else is history and is forwarded as is. The string
+    check keeps the common case (deltas) from being parsed at all.
+    """
+    if '"confirm"' not in line:
+        return True
+    try:
+        payload = json.loads(line)
+    except json.JSONDecodeError:
+        return True
+    if payload.get("type") != "confirm":
+        return True
+    return BROKER.is_pending(str(payload.get("request_id") or ""))
+
+
 async def _drain(websocket: WebSocket, channel: StreamChannel, offset: int = 0) -> int:
     """Forward buffered + live events to the socket; return the new offset.
 
@@ -1248,6 +1267,8 @@ async def _drain(websocket: WebSocket, channel: StreamChannel, offset: int = 0) 
         version = channel.version
         lines, cursor, done = channel.read_from(cursor)
         for line in lines:
+            if not _forwardable(line):
+                continue
             try:
                 await websocket.send_text(line)
             except (WebSocketDisconnect, RuntimeError, ConnectionError):

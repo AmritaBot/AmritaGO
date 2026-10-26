@@ -55,6 +55,15 @@ class AuditBroker:
             for key, item in self._pending.items()
         ]
 
+    def is_pending(self, request_id: str) -> bool:
+        """Whether an answer could still reach a caller.
+
+        A replayed ``confirm`` whose request is gone would raise a dialog whose
+        only possible outcome is "已过期", so the drain uses this to drop it
+        before it ever reaches the browser.
+        """
+        return request_id in self._pending
+
     async def ask(
         self,
         channel: Any,
@@ -72,6 +81,7 @@ class AuditBroker:
         loop = asyncio.get_running_loop()
         pending = _Pending(future=loop.create_future(), command=command)
         self._pending[request_id] = pending
+        status = "cancelled"
         try:
             await channel.publish(
                 {
@@ -89,6 +99,7 @@ class AuditBroker:
             try:
                 decision = await asyncio.wait_for(pending.future, timeout)
             except asyncio.TimeoutError:
+                status = "timed_out"
                 return Decision(
                     approved=False,
                     command=command,
@@ -97,17 +108,19 @@ class AuditBroker:
                     timed_out=True,
                     request_id=request_id,
                 )
-            except asyncio.CancelledError:
-                # The call was cancelled (or the turn stopped) while the user was
-                # still deciding. Close the dialog: an answer to a question whose
-                # caller is gone would only produce "已过期".
-                with suppress(asyncio.CancelledError):
-                    await channel.publish({"type": "confirm_closed", "request_id": request_id})
-                raise
             decision.request_id = request_id
+            status = "answered"
             return decision
         finally:
             self._pending.pop(request_id, None)
+            # Every request closes exactly once, whatever ended it. The stream
+            # is replayed on reconnect, so an unbalanced ``confirm`` would
+            # resurrect a question that nobody can answer any more — and two
+            # parallel tool calls would then fight over one dialog.
+            with suppress(asyncio.CancelledError, Exception):
+                await channel.publish(
+                    {"type": "confirm_closed", "request_id": request_id, "status": status}
+                )
 
     def resolve(
         self,

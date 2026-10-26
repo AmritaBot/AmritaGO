@@ -128,8 +128,10 @@ export function useChatSocket(sessionId: string | null) {
   const [liveUsage, setLiveUsage] = useState<LiveUsage | null>(null);
   const [totals, setTotals] = useState<UsageTotals | null>(null);
   const [lastUsage, setLastUsage] = useState<TurnUsage | null>(null);
-  //: A tool is parked waiting for the user; the dialog blocks on this.
-  const [pendingConfirm, setPendingConfirm] = useState<ConfirmRequest | null>(null);
+  //: Tool calls parked waiting for the user, in arrival order. Several can be
+  //: outstanding at once (parallel tool calls each ask), and the turn stays
+  //: blocked until every one of them is answered.
+  const [pendingConfirms, setPendingConfirms] = useState<ConfirmRequest[]>([]);
   //: The run spent its tool budget and is parked until this is answered.
   const [limitRequest, setLimitRequest] = useState<ToolLimitRequest | null>(null);
   //: Tool calls the server is executing right now, keyed by ``tool_id``. Only
@@ -396,8 +398,9 @@ export function useChatSocket(sessionId: string | null) {
         }
         case "confirm": {
           // The turn is blocked server-side until this is answered, so the
-          // dialog is the only way forward — not merely a notification.
-          setPendingConfirm({
+          // dialog is the only way forward — not merely a notification. Several
+          // calls can ask at once, so this appends instead of replacing.
+          const request: ConfirmRequest = {
             request_id: event.request_id,
             title: event.title,
             command: event.command,
@@ -406,7 +409,12 @@ export function useChatSocket(sessionId: string | null) {
             hint: event.hint,
             output: event.output,
             timeout: event.timeout,
-          });
+          };
+          setPendingConfirms((prev) =>
+            prev.some((item) => item.request_id === request.request_id)
+              ? prev
+              : [...prev, request],
+          );
           break;
         }
         case "todos": {
@@ -414,10 +422,10 @@ export function useChatSocket(sessionId: string | null) {
           break;
         }
         case "confirm_closed": {
-          // The call behind the prompt was cancelled or the turn stopped: the
-          // question is gone, so the dialog must go with it.
-          setPendingConfirm((prev) =>
-            prev && prev.request_id === event.request_id ? null : prev,
+          // The call behind the prompt was answered, timed out or cancelled:
+          // the question is gone, so only that one leaves the dialog.
+          setPendingConfirms((prev) =>
+            prev.filter((item) => item.request_id !== event.request_id),
           );
           break;
         }
@@ -503,7 +511,7 @@ export function useChatSocket(sessionId: string | null) {
           }
           // A parked confirmation cannot outlive its turn; the server already
           // resolved it (answered, timed out or cancelled).
-          setPendingConfirm(null);
+          setPendingConfirms([]);
           // A gate cannot outlive its run either, and an aborted one never got
           // an answer at all.
           setLimitRequest(null);
@@ -602,7 +610,7 @@ export function useChatSocket(sessionId: string | null) {
       setStreamId(null);
       setBusy(false);
       setLiveUsage(null);
-      setPendingConfirm(null);
+      setPendingConfirms([]);
       setRunningTools({});
       if (isMockMode()) {
         // A test turn is never persisted, so there is no history to load and
@@ -847,19 +855,27 @@ export function useChatSocket(sessionId: string | null) {
    * should be told its command was changed.
    */
   const sendConfirm = useCallback(
-    (approved: boolean, command?: string, reason?: string) => {
-      const request = pendingConfirm;
+    (requestId: string, approved: boolean, command?: string, reason?: string) => {
+      const request = pendingConfirms.find((item) => item.request_id === requestId);
       if (!request) return;
-      setPendingConfirm(null);
+      // Drop exactly this one, right away: the answer is already on its way and
+      // a second click must not send a second response. The others stay up.
+      setPendingConfirms((prev) => prev.filter((item) => item.request_id !== requestId));
       if (isMockConfirm(request.request_id)) {
         // Test mode: the fabricated request is answered in-browser so the
         // accepted / edited / rejected paths are all reachable without a shell.
+        // A parallel demo parks several at once, so only the last answer ends
+        // the turn — the earlier ones just record their own outcome.
+        const others = pendingConfirms.filter(
+          (item) => item.request_id !== requestId && isMockConfirm(item.request_id),
+        ).length;
         finishMockAudit({
           onEvent: handleEvent,
           approved,
           command: command ?? request.command,
           reason: reason ?? "",
           original: request.command,
+          final: others === 0,
         });
         return;
       }
@@ -877,7 +893,7 @@ export function useChatSocket(sessionId: string | null) {
         );
       }
     },
-    [handleEvent, pendingConfirm, sessionId],
+    [handleEvent, pendingConfirms, sessionId],
   );
 
   /** Answer the budget gate: continue, wind down, or cut the turn off. */
@@ -973,7 +989,7 @@ export function useChatSocket(sessionId: string | null) {
       totals,
       lastUsage,
       contextMessages,
-      pendingConfirm,
+      pendingConfirms,
       todos,
       send,
       stop,
@@ -996,7 +1012,7 @@ export function useChatSocket(sessionId: string | null) {
       totals,
       lastUsage,
       contextMessages,
-      pendingConfirm,
+      pendingConfirms,
       todos,
       send,
       stop,
