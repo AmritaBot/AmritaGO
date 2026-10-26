@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { MonitorIcon, MoonIcon, PlusIcon, PanelLeftIcon, SunIcon } from "lucide-react";
 import { toast } from "sonner";
 
@@ -44,6 +44,17 @@ export default function App() {
   const [activeAgent, setActiveAgent] = useState("standard");
   const [models, setModels] = useState<ModelOption[]>([]);
   const [activeModel, setActiveModel] = useState<string | null>(null);
+  //: Sessions with a turn alive server-side. Kept apart from ``sessions`` so a
+  //: background run keeps its indicator even when the row's data is stale.
+  const [runningIds, setRunningIds] = useState<string[]>([]);
+
+  const markRunning = useCallback((id: string, value: boolean) => {
+    setRunningIds((prev) => {
+      const has = prev.includes(id);
+      if (value === has) return prev;
+      return value ? [...prev, id] : prev.filter((item) => item !== id);
+    });
+  }, []);
 
   const refreshSessions = async () => {
     const [live, stored] = await Promise.all([
@@ -52,6 +63,9 @@ export default function App() {
     ]);
     setSessions(live.sessions);
     setArchived(stored.sessions.filter((session) => session.archived));
+    // The server is the source of truth: a reload while a turn is running must
+    // bring the indicator back, and a finished background turn must clear it.
+    setRunningIds(live.sessions.filter((session) => session.running).map((s) => s.id));
     return live.sessions;
   };
 
@@ -147,6 +161,49 @@ export default function App() {
     return () => window.removeEventListener("amrita:usage", handler);
   }, []);
 
+  /**
+   * Keep the sidebar honest while something runs.
+   *
+   * A session that is working in the background has no open socket here — its
+   * turn lives on the server — so the only way to know it finished is to ask.
+   * Polling is limited to the time something is actually running.
+   */
+  useEffect(() => {
+    if (runningIds.length === 0) return;
+    const timer = window.setInterval(() => {
+      void api
+        .listSessions()
+        .then((live) => {
+          setRunningIds(
+            live.sessions.filter((session) => session.running).map((session) => session.id),
+          );
+          // Token counts and titles move with a background run too.
+          setSessions((prev) =>
+            prev.map((session) => {
+              const fresh = live.sessions.find((item) => item.id === session.id);
+              return fresh ? { ...session, ...fresh } : session;
+            }),
+          );
+        })
+        .catch(() => undefined);
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [runningIds.length]);
+
+  const replaceSession = (updated: SessionMeta) => {
+    const apply = (list: SessionMeta[]) =>
+      list.map((session) => (session.id === updated.id ? { ...session, ...updated } : session));
+    setSessions(apply);
+    setArchived(apply);
+  };
+
+  /** Point the active conversation at a workspace or agent (per session). */
+  const configureSession = async (config: { workspace?: string; agent?: string }) => {
+    if (!activeId) return;
+    const updated = await api.setSessionConfig(activeId, config);
+    replaceSession(updated);
+  };
+
   const createSession = async () => {
     const created = await api.createSession();
     setSessions((prev) => [created, ...prev]);
@@ -235,6 +292,7 @@ export default function App() {
           sessions={sessions}
           archived={archived}
           activeId={activeId}
+          runningIds={runningIds}
           onSelect={(id) => {
             setActiveId(id);
             if (window.innerWidth < 900) setSidebarOpen(false);
@@ -320,7 +378,7 @@ export default function App() {
               name: item.name,
               path: item.path,
             }))}
-            activeWorkspace={activeWorkspace}
+            activeWorkspace={active?.workspace ?? activeWorkspace}
             agents={agents.map((agent) => ({
               name: agent.name,
               title: agent.title,
@@ -333,15 +391,22 @@ export default function App() {
               access: agent.access,
             }))}
             models={models}
-            activeAgent={activeAgent}
+            activeAgent={active?.agent ?? activeAgent}
             activeModel={activeModel}
+            onRunningChange={(value) => {
+              if (activeId) markRunning(activeId, value);
+            }}
             onSelectWorkspace={async (path) => {
+              // Both: this conversation moves now, and the default moves with
+              // it so the next session starts where the user is working.
+              await configureSession({ workspace: path });
               await api.activateWorkspace(path);
               setActiveWorkspace(path);
               await refreshContext();
             }}
             onAddWorkspace={() => setAddWorkspaceOpen(true)}
             onSelectAgent={async (name) => {
+              await configureSession({ agent: name });
               await api.activateAgent(name);
               setActiveAgent(name);
             }}

@@ -16,7 +16,7 @@ import { toast } from "sonner";
 import { Markdown } from "@/components/chat/markdown";
 import { ChatFooter } from "@/components/chat/chat-footer";
 import { Trace } from "@/components/chat/trace";
-import { AuditDialog } from "@/components/chat/audit-dialog";
+import { AuditPanel } from "@/components/chat/audit-panel";
 import { TodoPanel } from "@/components/chat/todo-panel";
 import type { SettingsTab } from "@/components/chat/settings-dialog";
 import {
@@ -475,6 +475,7 @@ export function ChatView({
   onModelsChanged,
   onOpenSettings,
   onBranch,
+  onRunningChange,
 }: {
   sessionId: string;
   onTitleHint: (title: string) => void;
@@ -493,6 +494,8 @@ export function ChatView({
   onOpenSettings: (tab?: SettingsTab) => void;
   /** Fork the session at a history entry, keeping that message. */
   onBranch: (entryId: string) => void;
+  /** Tell the sidebar this conversation started or stopped working. */
+  onRunningChange?: (running: boolean) => void;
 }) {
   const {
     messages,
@@ -669,6 +672,12 @@ export function ChatView({
     };
   }, []);
 
+  // The sidebar marks which conversations are working. ``busy`` covers this one
+  // while it is open; a background session is picked up by App's poll instead.
+  useEffect(() => {
+    onRunningChange?.(busy);
+  }, [busy, onRunningChange]);
+
   useLayoutEffect(() => {
     if (!stickToBottom.current) return;
     const node = scroller.current;
@@ -770,6 +779,7 @@ export function ChatView({
       </div>
 
       <div className="shrink-0">
+        <AuditPanel requests={pendingConfirms} onSubmit={sendConfirm} />
         {limitRequest && (
           <ToolLimitCard
             budget={limitRequest.budget}
@@ -832,7 +842,6 @@ export function ChatView({
           }}
         />
       </div>
-      <AuditDialog requests={pendingConfirms} onSubmit={sendConfirm} />
       <PromptDialog
         open={cancelTarget !== null}
         onOpenChange={(open) => {

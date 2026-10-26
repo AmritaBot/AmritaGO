@@ -51,6 +51,8 @@ export interface SessionMeta {
   updated_at: number;
   preset: string | null;
   agent: string | null;
+  /** Directory this conversation works in; ``null`` inherits the default. */
+  workspace: string | null;
   message_count: number;
   usage: UsageTotals;
   archived: boolean;
@@ -58,6 +60,13 @@ export interface SessionMeta {
   parent_id: string | null;
   branch_from: string | null;
   branch_index: number | null;
+  /**
+   * A turn for this session is alive server-side right now.
+   *
+   * Computed per request (never stored), so a session keeps running while the
+   * user looks at another one.
+   */
+  running?: boolean;
 }
 
 export interface HistoryEntry {
@@ -427,8 +436,6 @@ export interface ConfirmRequest {
   hint: string;
   /** Tail of the previous run, shown read-only for context. */
   output: string;
-  /** Seconds until the request is treated as a rejection. */
-  timeout: number;
 }
 
 /**
@@ -878,6 +885,17 @@ export const api = {
   renameSession: (id: string, title: string) =>
     request<SessionMeta>(`/sessions/${id}?title=${encodeURIComponent(title)}`, {
       method: "PATCH",
+    }),
+  /**
+   * Point one conversation at a workspace and/or agent.
+   *
+   * ``undefined`` leaves a field alone, so the two switchers can update the
+   * session independently of each other.
+   */
+  setSessionConfig: (id: string, config: { workspace?: string; agent?: string }) =>
+    request<SessionMeta>(`/sessions/${id}/config`, {
+      method: "POST",
+      body: JSON.stringify(config),
     }),
   deleteSession: (id: string) =>
     request<{ ok: boolean }>(`/sessions/${id}`, { method: "DELETE" }),

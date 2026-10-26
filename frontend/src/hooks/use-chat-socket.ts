@@ -398,7 +398,7 @@ export function useChatSocket(sessionId: string | null) {
         }
         case "confirm": {
           // The turn is blocked server-side until this is answered, so the
-          // dialog is the only way forward — not merely a notification. Several
+          // panel is the only way forward — not merely a notification. Several
           // calls can ask at once, so this appends instead of replacing.
           const request: ConfirmRequest = {
             request_id: event.request_id,
@@ -408,7 +408,6 @@ export function useChatSocket(sessionId: string | null) {
             shell: event.shell,
             hint: event.hint,
             output: event.output,
-            timeout: event.timeout,
           };
           setPendingConfirms((prev) =>
             prev.some((item) => item.request_id === request.request_id)

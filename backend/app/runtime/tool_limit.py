@@ -30,6 +30,7 @@ from amrita_core.types import ToolCall, UniResponse
 from amrita_sense.logging import logger
 
 from app.core.settings import load_settings
+from app.runtime.audit import BROKER
 from app.runtime.limit_gate import LIMITS
 from app.runtime.stream_hub import HUB
 from app.runtime.tool_gate import CANCELLED_PREFIX, TIMEOUT_PREFIX, TOOLS
@@ -164,25 +165,37 @@ class LimitAwareStrategy(ReActAgentStrategy):
         # ``aborted`` means the turn itself was stopped; the UI never sees it,
         # but it keeps the published outcome honest.
         outcome = "aborted"
+        loop = asyncio.get_running_loop()
+        deadline = None if timeout <= 0 else loop.time() + timeout
         try:
-            done, _ = await asyncio.wait(
-                {task, gate.future},
-                timeout=timeout if timeout > 0 else None,
-                return_when=asyncio.FIRST_COMPLETED,
-            )
+            while True:
+                remaining = None if deadline is None else max(0.0, deadline - loop.time())
+                done, _ = await asyncio.wait(
+                    {task, gate.future},
+                    timeout=remaining,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if done:
+                    break
+                # Nothing finished in time. If the call is parked on a
+                # confirmation, the clock is measuring a person reading, not a
+                # tool working — restart it and keep waiting. Approval has no
+                # deadline of its own; only execution does.
+                if BROKER.parked(self._session_id()):
+                    deadline = None if timeout <= 0 else loop.time() + timeout
+                    continue
+                outcome = "timeout"
+                await _abandon(task)
+                return await self._tool_timed_out(tool_call, timeout)
             if task in done:
                 # ``result()`` re-raises the tool's own failure, which the
                 # framework turns into an ``ERR:`` tool result.
                 failed = task.cancelled() or task.exception() is not None
                 outcome = "failed" if failed else "done"
                 return task.result()
-            if gate.future in done:
-                outcome = "cancelled"
-                await _abandon(task)
-                return await self._tool_cancelled(tool_call, gate.future.result())
-            outcome = "timeout"
+            outcome = "cancelled"
             await _abandon(task)
-            return await self._tool_timed_out(tool_call, timeout)
+            return await self._tool_cancelled(tool_call, gate.future.result())
         finally:
             TOOLS.close(tool_call.id)
             if not task.done():
@@ -296,6 +309,9 @@ class LimitAwareStrategy(ReActAgentStrategy):
     def _channel(self) -> Any | None:
         session_id = getattr(self.chat_object, "session_id", None)
         return HUB.latest(session_id) if session_id else None
+
+    def _session_id(self) -> str:
+        return str(getattr(self.chat_object, "session_id", "") or "")
 
 
 __all__ = ["ABORT_NOTICE", "DEFAULT_TOOL_TIMEOUT", "LimitAwareStrategy", "for_run"]

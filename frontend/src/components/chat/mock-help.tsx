@@ -16,7 +16,7 @@ import { InfoHint } from "@/components/ui/info-hint";
 const TRIGGERS: { label: string; keywords: string[] }[] = [
   { label: "待办面板", keywords: ["计划", "待办", "todo", "plan"] },
   {
-    label: "审批弹窗（可驳回）",
+    label: "审批面板（可驳回）",
     keywords: ["审批", "确认", "audit", "confirm"],
   },
   {

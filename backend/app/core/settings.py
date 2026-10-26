@@ -55,8 +55,8 @@ class AppSettings(BaseModel):
 
     ``0`` disables it. This is the outer bound: a tool that enforces a shorter
     limit of its own (the shell plugin's ``timeout`` argument) still returns
-    first. It also covers a tool parked on a confirmation prompt, so keep it
-    above ``audit_timeout`` unless a shorter leash is what you want.
+    first. Time spent parked on a confirmation prompt does **not** count — the
+    clock is restarted when the user answers, because approval has no deadline.
     """
     legacy_presets_imported: bool = False
     """``presets/*.json`` imported once; set to ``false`` to re-run the import."""

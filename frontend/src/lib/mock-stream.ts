@@ -295,7 +295,6 @@ export function startMockTurn({
             shell: "unix/bash",
             hint: "两个工具同时在等确认：可以分开批准或拒绝，全部答复后这一轮才继续。",
             output: item.output,
-            timeout: 180,
           }),
         420 + index * 260,
       );
@@ -320,7 +319,6 @@ export function startMockTurn({
             "\x1b[32m✓\x1b[0m 161 modules transformed.\n" +
             "\x1b[33mwarning:\x1b[0m chunk larger than 500 kB\n" +
             "Build completed in 793ms\n",
-          timeout: 180,
         }),
       460,
     );

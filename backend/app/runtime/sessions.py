@@ -35,6 +35,9 @@ class SessionMeta(BaseModel):
     updated_at: float = Field(default_factory=time.time)
     preset: str | None = None
     agent: str | None = None
+    # Directory this conversation works in. ``None`` falls back to the global
+    # default, which is what a session created before this field existed gets.
+    workspace: str | None = None
     message_count: int = 0
     usage: UsageTotals = Field(default_factory=UsageTotals)
     # Archived sessions are hidden from the sidebar but still on disk.
@@ -140,14 +143,55 @@ async def list_sessions(include_archived: bool = False) -> list[SessionMeta]:
     return out
 
 
-async def create_session(title: str = "新会话", preset: str | None = None) -> SessionMeta:
+async def create_session(
+    title: str = "新会话",
+    preset: str | None = None,
+    *,
+    workspace: str | None = None,
+    agent: str | None = None,
+) -> SessionMeta:
+    """Create a session, snapshotting the defaults it should keep.
+
+    Workspace and agent are copied from the current defaults rather than looked
+    up on every turn: switching workspace in another session must not move this
+    conversation's files under it.
+    """
     PATHS.ensure()
-    meta = SessionMeta(id=uuid.uuid4().hex, title=title, preset=preset)
+    meta = SessionMeta(
+        id=uuid.uuid4().hex,
+        title=title,
+        preset=preset,
+        workspace=workspace,
+        agent=agent,
+    )
     _session_dir(meta.id).mkdir(parents=True, exist_ok=True)
     await write_json(meta_path(meta.id), meta.model_dump())
     await write_json(context_path(meta.id), MemoryModel().model_dump(mode="json"))
     history_path(meta.id).touch()
     usage_path(meta.id).touch()
+    return meta
+
+
+async def set_session_config(
+    session_id: str,
+    *,
+    workspace: str | None = None,
+    agent: str | None = None,
+) -> SessionMeta | None:
+    """Point one session at a workspace and/or an agent.
+
+    ``None`` means "leave as is", so a client can set either field alone. The
+    change applies to the next turn; a running turn keeps the copy it started
+    with.
+    """
+    meta = await get_meta(session_id)
+    if meta is None:
+        return None
+    if workspace is not None:
+        meta.workspace = workspace
+    if agent is not None:
+        meta.agent = agent
+    await save_meta(meta)
     return meta
 
 
@@ -241,6 +285,8 @@ async def branch_session(
         title=label,
         preset=source.preset,
         agent=source.agent,
+        # A branch continues the same work, in the same directory.
+        workspace=source.workspace,
         parent_id=source.id,
         branch_from=source.id,
         branch_index=index if index is not None else len(entries),

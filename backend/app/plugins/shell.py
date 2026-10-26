@@ -131,13 +131,6 @@ class ShellConfig(BaseModel):
             "用来在放行一片命令时把危险的那几条单独拦下来。"
         ),
     )
-    audit_timeout: float = Field(
-        default=180,
-        ge=10,
-        le=1800,
-        title="确认等待上限（秒）",
-        description="无人应答时多久放弃；放弃按拒绝处理，并把原因告诉模型。",
-    )
 
     @field_validator("audit", mode="before")
     @classmethod
@@ -335,7 +328,6 @@ async def _audit(
         shell=f"{session.kind}/{session.flavour}",
         hint="可以修改命令后再批准；拒绝时请写清理由，它会作为工具结果返回给模型。",
         output=output,
-        timeout=float(config.audit_timeout),
     )
     if not decision.approved:
         reason = decision.reason or "用户拒绝执行"

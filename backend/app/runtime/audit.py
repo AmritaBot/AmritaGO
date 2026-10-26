@@ -2,9 +2,13 @@
 
 The tool publishes a ``confirm`` event into the session stream and parks on a
 future that the chat socket resolves with an approval (optionally with an
-edited command), a rejection (with a reason) or a timeout. Policy lives in the
-tool; this module only knows how to ask. Every failure mode resolves to
-"not approved".
+edited command) or a rejection (with a reason). Policy lives in the tool; this
+module only knows how to ask. Every failure mode resolves to "not approved".
+
+There is deliberately **no timeout**. A prompt is a question to the person who
+started the run; answering "nobody replied" on their behalf turns a slow reader
+into a rejected command, and the turn then continues down a path they never
+chose. A request lives until it is answered, cancelled, or the turn is stopped.
 """
 
 from __future__ import annotations
@@ -18,7 +22,7 @@ from typing import Any
 
 from amrita_sense.logging import logger
 
-# How long a tool waits for an answer before giving up.
+# Kept for callers that still pass a timeout; the broker ignores it.
 DEFAULT_TIMEOUT = 180.0
 
 
@@ -29,6 +33,7 @@ class Decision:
     command: str
     # Present when rejected; fed back to the model so it can adapt.
     reason: str = ""
+    # Never set any more: approvals wait indefinitely. Kept for old callers.
     timed_out: bool = False
     edited: bool = False
     request_id: str = ""
@@ -41,6 +46,9 @@ class _Pending:
     )
     command: str = ""
     created_at: float = field(default_factory=time.time)
+    #: Session the question belongs to, so a tool timeout can tell
+    #: "the model is slow" from "the human is thinking".
+    session_id: str = ""
 
 
 class AuditBroker:
@@ -58,11 +66,18 @@ class AuditBroker:
     def is_pending(self, request_id: str) -> bool:
         """Whether an answer could still reach a caller.
 
-        A replayed ``confirm`` whose request is gone would raise a dialog whose
+        A replayed ``confirm`` whose request is gone would raise a prompt whose
         only possible outcome is "已过期", so the drain uses this to drop it
         before it ever reaches the browser.
         """
         return request_id in self._pending
+
+    def parked(self, session_id: str) -> bool:
+        """Whether this session is waiting on the human right now."""
+        return any(
+            item.session_id == session_id and not item.future.done()
+            for item in self._pending.values()
+        )
 
     async def ask(
         self,
@@ -74,12 +89,15 @@ class AuditBroker:
         shell: str,
         hint: str = "",
         output: str = "",
-        timeout: float = DEFAULT_TIMEOUT,
     ) -> Decision:
         """Publish a confirmation request and wait for the browser's answer."""
         request_id = uuid.uuid4().hex
         loop = asyncio.get_running_loop()
-        pending = _Pending(future=loop.create_future(), command=command)
+        pending = _Pending(
+            future=loop.create_future(),
+            command=command,
+            session_id=str(getattr(channel, "session_id", "") or ""),
+        )
         self._pending[request_id] = pending
         status = "cancelled"
         try:
@@ -93,21 +111,11 @@ class AuditBroker:
                     "shell": shell,
                     "hint": hint,
                     "output": output,
-                    "timeout": timeout,
                 }
             )
-            try:
-                decision = await asyncio.wait_for(pending.future, timeout)
-            except asyncio.TimeoutError:
-                status = "timed_out"
-                return Decision(
-                    approved=False,
-                    command=command,
-                    # ``:g`` keeps a fractional timeout readable (``0.3 秒``).
-                    reason=f"等了 {timeout:g} 秒没有收到确认，已放弃执行。",
-                    timed_out=True,
-                    request_id=request_id,
-                )
+            # No ``wait_for``: the question stays open until it is answered,
+            # the call is cancelled, or the turn is stopped.
+            decision = await pending.future
             decision.request_id = request_id
             status = "answered"
             return decision

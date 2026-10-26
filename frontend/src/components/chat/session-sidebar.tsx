@@ -32,6 +32,7 @@ function SessionRow({
   session,
   active,
   archived,
+  running,
   onSelect,
   onRename,
   onArchive,
@@ -41,6 +42,8 @@ function SessionRow({
   session: SessionMeta;
   active: boolean;
   archived: boolean;
+  /** A turn for this session is alive server-side right now. */
+  running: boolean;
   onSelect: () => void;
   onRename: (title: string) => void;
   onArchive: () => void;
@@ -71,8 +74,7 @@ function SessionRow({
       ) : (
         <MessageSquareIcon className="size-4 shrink-0 opacity-80" />
       )}
-      <div className="min-w-0 flex-1">
-        {editing ? (
+      <div className="min-w-0 flex-1">        {editing ? (
           <input
             autoFocus
             value={draft}
@@ -92,7 +94,7 @@ function SessionRow({
           />
         ) : (
           <div
-            className="truncate"
+            className={cn("truncate", running && !editing && "thinking-sheen")}
             onDoubleClick={(event) => {
               event.stopPropagation();
               setEditing(true);
@@ -104,6 +106,7 @@ function SessionRow({
           </div>
         )}
         <div className="truncate text-[11px] text-muted-foreground">
+          {running ? "正在运行 · " : ""}
           {relativeTime(session.updated_at)}
           {session.usage.total_tokens > 0
             ? ` · ${session.usage.total_tokens} tok`
@@ -172,6 +175,7 @@ export function SessionSidebar({
   sessions,
   archived,
   activeId,
+  runningIds = [],
   onSelect,
   onCreate,
   onDelete,
@@ -184,6 +188,8 @@ export function SessionSidebar({
   sessions: SessionMeta[];
   archived: SessionMeta[];
   activeId: string | null;
+  /** Sessions with a live turn; their titles get the sheen. */
+  runningIds?: string[];
   onSelect: (id: string) => void;
   onCreate: () => void;
   onDelete: (id: string) => void;
@@ -236,6 +242,7 @@ export function SessionSidebar({
                 session={session}
                 active={session.id === activeId}
                 archived={false}
+                running={runningIds.includes(session.id)}
                 onSelect={() => onSelect(session.id)}
                 onRename={(title) => onRename(session.id, title)}
                 onArchive={() => setPending({ session, kind: "archive" })}
@@ -271,6 +278,7 @@ export function SessionSidebar({
                   session={session}
                   active={session.id === activeId}
                   archived
+                  running={runningIds.includes(session.id)}
                   onSelect={() => onSelect(session.id)}
                   onRename={(title) => onRename(session.id, title)}
                   // Restoring is the undo of the action that needed confirming,

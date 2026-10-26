@@ -96,6 +96,7 @@ from app.runtime.sessions import (
     load_history,
     load_usage,
     save_meta,
+    set_session_config,
 )
 from app.runtime.stream_hub import HUB, StreamChannel
 from app.runtime.tool_gate import TOOLS
@@ -111,6 +112,16 @@ setup_logging()
 class SessionCreateRequest(BaseModel):
     title: str = "新会话"
     preset: str | None = None
+    # ``None`` means "inherit the current default".
+    workspace: str | None = None
+    agent: str | None = None
+
+
+class SessionConfigRequest(BaseModel):
+    """What a session can be re-pointed at. ``None`` leaves a field alone."""
+
+    workspace: str | None = None
+    agent: str | None = None
 
 
 class SettingsUpdate(BaseModel):
@@ -1053,13 +1064,24 @@ async def reconnect_mcp(name: str) -> dict[str, Any]:
 @app.get(f"{API}/sessions")
 async def get_sessions(include_archived: bool = False) -> dict[str, Any]:
     metas = await list_sessions(include_archived=include_archived)
-    return {"sessions": [meta.model_dump() for meta in metas]}
+    # ``running`` is computed, never stored: it is true while a turn for that
+    # session is still alive in this process. The sidebar uses it to show which
+    # conversations are working, including ones the user is not looking at.
+    return {"sessions": [{**meta.model_dump(), "running": HUB.busy(meta.id)} for meta in metas]}
 
 
 @app.post(f"{API}/sessions")
 async def post_session(payload: SessionCreateRequest) -> dict[str, Any]:
-    meta = await create_session(title=payload.title, preset=payload.preset)
-    return meta.model_dump()
+    settings = await load_settings()
+    meta = await create_session(
+        title=payload.title,
+        preset=payload.preset,
+        # Snapshot the defaults so this conversation keeps its own directory and
+        # agent even after the defaults move on.
+        workspace=payload.workspace or settings.active_workspace,
+        agent=payload.agent or settings.active_agent,
+    )
+    return {**meta.model_dump(), "running": False}
 
 
 @app.get(f"{API}/sessions/{{session_id}}")
@@ -1086,6 +1108,25 @@ async def rename_session(session_id: str, title: str) -> dict[str, Any]:
 
     await save_meta(meta)
     return meta.model_dump()
+
+
+@app.post(f"{API}/sessions/{{session_id}}/config")
+async def set_session_settings(session_id: str, payload: SessionConfigRequest) -> dict[str, Any]:
+    """Point this conversation at a workspace and/or agent.
+
+    Per session, not per process: the switcher in the composer edits *this*
+    conversation, so two sessions can work in different directories at once.
+    """
+    workspace = payload.workspace
+    if workspace is not None:
+        resolved = _workspace_path(workspace)
+        if resolved is None:
+            raise HTTPException(status_code=400, detail="workspace not found")
+        workspace = str(resolved)
+    meta = await set_session_config(session_id, workspace=workspace, agent=payload.agent)
+    if meta is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    return {**meta.model_dump(), "running": HUB.busy(meta.id)}
 
 
 @app.get(f"{API}/sessions/{{session_id}}/history")
@@ -1418,7 +1459,8 @@ async def chat_socket(websocket: WebSocket) -> None:
             if not message and not attachments:
                 await websocket.send_text(_frame({"type": "error", "message": "消息为空"}))
                 continue
-            if await get_meta(target_session) is None:
+            meta = await get_meta(target_session)
+            if meta is None:
                 await websocket.send_text(_frame({"type": "error", "message": "session not found"}))
                 continue
 
@@ -1435,6 +1477,17 @@ async def chat_socket(websocket: WebSocket) -> None:
                 continue
 
             settings = await load_settings()
+            # Workspace and agent belong to the conversation, not to the
+            # process: two sessions can run in parallel in different
+            # directories. The session's own values win, then the explicit
+            # payload (a one-off override), then the global default for
+            # sessions created before this was per-session.
+            run_settings = settings.model_copy(
+                update={
+                    "active_workspace": meta.workspace or settings.active_workspace,
+                    "active_agent": meta.agent or settings.active_agent,
+                }
+            )
             # A registered slash command is answered by the runtime itself: no
             # preset, no key, no tools. Checking the model first would make
             # ``/help`` unreachable exactly when it is most useful.
@@ -1471,8 +1524,8 @@ async def chat_socket(websocket: WebSocket) -> None:
             # Bound to a name so the closure captures a non-optional value.
             model = resolved
 
-            workspace = _workspace_path(payload.get("workspace") or settings.active_workspace)
-            agent = resolve_agent(payload.get("agent") or settings.active_agent, workspace)
+            workspace = _workspace_path(payload.get("workspace") or run_settings.active_workspace)
+            agent = resolve_agent(payload.get("agent") or run_settings.active_agent, workspace)
 
             current = target_session
             channel = await HUB.create(current)
@@ -1512,7 +1565,7 @@ async def chat_socket(websocket: WebSocket) -> None:
                     ch,
                     current,
                     text,
-                    await load_settings(),
+                    run_settings,
                     model,
                     agent,
                     files,
