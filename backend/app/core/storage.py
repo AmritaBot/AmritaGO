@@ -58,6 +58,17 @@ def read_jsonl_sync(path: Path) -> list[dict[str, Any]]:
     return out
 
 
+def write_jsonl_sync(path: Path, records: list[dict[str, Any]]) -> None:
+    """Replace a JSONL file in one atomic step.
+
+    Appending is the normal path; rewriting is for the cases where history is
+    rolled back, and a half-written transcript there would be worse than a
+    stale one.
+    """
+    payload = "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records)
+    _atomic_write_sync(path, payload)
+
+
 async def read_json(path: Path, default: Any = None) -> Any:
     return await asyncio.to_thread(read_json_sync, path, default)
 
@@ -72,3 +83,7 @@ async def append_jsonl(path: Path, record: dict[str, Any]) -> None:
 
 async def read_jsonl(path: Path) -> list[dict[str, Any]]:
     return await asyncio.to_thread(read_jsonl_sync, path)
+
+
+async def write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
+    await asyncio.to_thread(write_jsonl_sync, path, records)

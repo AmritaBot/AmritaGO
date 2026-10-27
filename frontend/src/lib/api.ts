@@ -926,6 +926,28 @@ export const api = {
     request<{ branches: SessionMeta[] }>(`/sessions/${id}/branches`),
   history: (id: string) =>
     request<{ entries: HistoryEntry[] }>(`/sessions/${id}/history`),
+  /**
+   * Rewrite the last prompt the agent never answered.
+   *
+   * The server rolls the context back to before it and drops the failed
+   * exchange; the caller then sends the edited text as a normal turn.
+   */
+  editMessage: (
+    id: string,
+    payload: { content: string; expected?: string },
+  ) =>
+    request<{
+      ok: boolean;
+      entry_id: string;
+      previous: string;
+      content: string;
+      removed_entries: number;
+      removed_messages: number;
+      context_messages: number;
+    }>(`/sessions/${id}/messages/edit`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   usage: (id: string) =>
     request<{
       totals: UsageTotals;

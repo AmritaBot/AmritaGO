@@ -1,10 +1,13 @@
 """Plugin runtime with generator-based lifecycles.
 
 A plugin is a callable that receives a :class:`PluginContext`, declares tools,
-MCP servers, workflows and hooks, then yields once to mark the end of setup;
-code after the ``yield`` runs on unload. Registration only records the plugin —
-each activation collects declarations into a fresh immutable
+MCP servers, workflows and event handlers, then yields once to mark the end of
+setup; code after the ``yield`` runs on unload. Registration only records the
+plugin — each activation collects declarations into a fresh immutable
 :class:`PluginSnapshot`.
+
+Event handlers are AmritaSense matchers, so they share the priority ordering
+and dependency injection used everywhere else; see :mod:`app.runtime.events`.
 """
 
 from __future__ import annotations
@@ -26,10 +29,11 @@ from amrita_sense.logging import debug_log, logger
 from pydantic import BaseModel
 
 from app.core.config import PATHS
+from app.runtime import events
 from app.runtime.commands import BUILTIN_COMMANDS, COMMANDS, CommandSpec
 from app.runtime.workflows import BUILTIN_WORKFLOWS, WORKFLOWS, WorkflowSpec
 
-HookHandler = Callable[[Mapping[str, Any]], Awaitable[Any] | Any]
+HookHandler = Callable[..., Awaitable[Any] | Any]
 BuildTools = Callable[[Any], list[ToolData]]
 
 
@@ -107,14 +111,13 @@ class PluginSnapshot:
     mcp_providers: tuple[MCPProvider, ...] = ()
     workflows: Mapping[str, WorkflowSpec] = field(default_factory=lambda: MappingProxyType({}))
     commands: Mapping[str, CommandSpec] = field(default_factory=lambda: MappingProxyType({}))
-    hooks: Mapping[str, tuple[HookHandler, ...]] = field(
-        default_factory=lambda: MappingProxyType({})
-    )
+    # Map event names to handler counts for the UI.
+    hooks: Mapping[str, int] = field(default_factory=lambda: MappingProxyType({}))
     # plugin name -> the model its settings validate against.
     configs: Mapping[str, type[BaseModel]] = field(default_factory=lambda: MappingProxyType({}))
 
     def signature(self) -> tuple[Any, ...]:
-        hooks = tuple(sorted((event, len(handlers)) for event, handlers in self.hooks.items()))
+        hooks = tuple(sorted(self.hooks.items()))
         return (
             tuple((p.name, p.tools, p.workflows, p.mcp) for p in self.plugins),
             tuple((t.name, t.description) for t in self.tool_sources),
@@ -173,7 +176,7 @@ class _Activation:
         self.mcp_providers: list[MCPProvider] = []
         self.workflows: dict[str, WorkflowSpec] = {}
         self.commands: dict[str, CommandSpec] = {}
-        self.hooks: dict[str, list[HookHandler]] = {}
+        self.hooks: dict[str, int] = {}
         self.configs: dict[str, type[BaseModel]] = {}
         self.infos: list[PluginInfo] = []
         self._current: list[str] = []
@@ -221,8 +224,14 @@ class _Activation:
         self.commands[spec.name] = replace(spec, source=self._current[0])
         self._commands.append(spec.name)
 
-    def add_hook(self, event: str, handler: HookHandler) -> None:
-        self.hooks.setdefault(event, []).append(handler)
+    def add_hook(self, event: str) -> None:
+        """Count a handler for ``event``.
+
+        The handler was already registered with AmritaSense by
+        :meth:`PluginContext.on`; the snapshot only needs to know the event is
+        in use, so ``/api/agents`` can report it.
+        """
+        self.hooks[event] = self.hooks.get(event, 0) + 1
         self._hooks.append(event)
 
     def set_config(self, name: str, model: type[BaseModel]) -> None:
@@ -260,9 +269,7 @@ class _Activation:
             mcp_providers=tuple(self.mcp_providers),
             workflows=MappingProxyType(dict(self.workflows)),
             commands=MappingProxyType(dict(self.commands)),
-            hooks=MappingProxyType(
-                {event: tuple(handlers) for event, handlers in self.hooks.items()}
-            ),
+            hooks=MappingProxyType(dict(self.hooks)),
             configs=MappingProxyType(dict(self.configs)),
         )
 
@@ -366,8 +373,36 @@ class PluginContext:
         """Declare a slash command; it is registered for this activation only."""
         self._require_activation().add_command(spec)
 
-    def on(self, event: str, handler: HookHandler) -> None:
-        self._require_activation().add_hook(event, handler)
+    def on(
+        self,
+        event: str,
+        handler: HookHandler | None = None,
+        *,
+        priority: int = 10,
+        block: bool = False,
+    ) -> Callable[[HookHandler], HookHandler] | None:
+        """Subscribe to a runtime event.
+
+        The handler becomes an AmritaSense matcher: ``priority`` runs lower
+        numbers first, and ``block`` stops the handlers after this one. Blocking
+        is off by default because several plugins may watch the same event, and
+        a bus where the first listener silences the rest is a trap.
+
+        Usable as ``ctx.on("run_end", handler)`` or as a decorator. Handlers are
+        removed from AmritaSense when the plugin unloads, so a disabled plugin
+        leaves nothing behind.
+        """
+        activation = self._require_activation()
+
+        def register(func: HookHandler) -> HookHandler:
+            self._runtime.subscribe(event, func, priority=priority, block=block)
+            activation.add_hook(event)
+            return func
+
+        if handler is None:
+            return register
+        register(handler)
+        return None
 
     def config(self, model: type[BaseModel]) -> None:
         """Declare this plugin's settings model.
@@ -387,6 +422,8 @@ class PluginRuntime:
         self._specs: dict[str, _PluginSpec] = {}
         self._snapshot: PluginSnapshot = EMPTY_SNAPSHOT
         self._handles: list[_Handle] = []
+        # Matchers created during the current activation, in load order.
+        self._subscriptions: list[events.Subscription] = []
         self._activation: _Activation | None = None
         self._lock = asyncio.Lock()
         self.debug = False
@@ -448,6 +485,23 @@ class PluginRuntime:
             for spec in self._specs.values()
         ]
 
+    def subscribe(
+        self,
+        event: str,
+        handler: HookHandler,
+        *,
+        priority: int = 10,
+        block: bool = False,
+    ) -> events.Subscription:
+        """Register a handler for the current activation.
+
+        Tracked here rather than on the snapshot because the matcher lives in a
+        process-global registry that has to be cleaned up explicitly.
+        """
+        subscription = events.subscribe(event, handler, priority=priority, block=block)
+        self._subscriptions.append(subscription)
+        return subscription
+
     async def _start(self, spec: _PluginSpec) -> _Handle:
         assert self._activation is not None
         self._activation.begin(spec)
@@ -505,6 +559,15 @@ class PluginRuntime:
                 await handle.close()
             except Exception as exc:
                 logger.opt(exception=exc).error("Plugin teardown failed")
+        # Remove handlers after teardown so plugin cleanup can still use them.
+        subscriptions, self._subscriptions = self._subscriptions, []
+        for subscription in subscriptions:
+            try:
+                subscription.close()
+            except Exception as exc:
+                logger.opt(exception=exc).error(
+                    f"Failed to remove the '{subscription.event}' handler"
+                )
         self._activation = None
 
     async def activate(self) -> PluginSnapshot:
@@ -541,29 +604,6 @@ class PluginRuntime:
 
     async def reload(self) -> PluginSnapshot:
         return await self.activate()
-
-    async def dispatch(self, event: str, payload: Mapping[str, Any]) -> tuple[Any, ...]:
-        """Call every handler for ``event`` and collect their return values.
-
-        Handlers receive an immutable mapping. Nothing here mutates runtime
-        state; the agent decides what to do with the returned values.
-        """
-        hooks = self._snapshot.hooks
-        handlers = hooks.get(event, ())
-        if not handlers:
-            return ()
-        frozen = MappingProxyType(dict(payload))
-        results: list[Any] = []
-        for handler in handlers:
-            try:
-                value = handler(frozen)
-                if inspect.isawaitable(value):
-                    value = await value
-            except Exception as exc:
-                logger.opt(exception=exc).error(f"Plugin hook '{event}' failed in {handler!r}")
-                continue
-            results.append(value)
-        return tuple(results)
 
 
 PLUGINS = PluginRuntime()

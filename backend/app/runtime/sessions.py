@@ -21,6 +21,7 @@ from app.core.storage import (
     read_json,
     read_jsonl,
     write_json,
+    write_jsonl,
 )
 from app.runtime import session_memory
 from app.runtime.billing import TurnUsage, UsageTotals
@@ -352,6 +353,16 @@ async def load_history(session_id: str) -> list[HistoryEntry]:
 
 async def append_history(session_id: str, entry: HistoryEntry) -> None:
     await append_jsonl(history_path(session_id), entry.model_dump())
+
+
+async def write_history(session_id: str, entries: list[HistoryEntry]) -> None:
+    """Replace the transcript.
+
+    Used when a turn is rolled back: appending cannot express "forget the last
+    exchange", and a reader that caught the file mid-rewrite would otherwise see
+    a truncated conversation.
+    """
+    await write_jsonl(history_path(session_id), [entry.model_dump() for entry in entries])
 
 
 async def bump_session(session_id: str, *, title: str | None = None) -> SessionMeta | None:

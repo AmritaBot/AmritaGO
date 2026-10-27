@@ -114,13 +114,41 @@ async def plugin(ctx):
 
 - `ctx.tool(ToolSource(...))`：添加工具来源。
 - `ctx.config(PydanticModel)`：声明插件配置。
-- `ctx.on(event, handler)`：订阅运行事件；当前常见事件为 `run_start`、`run_end`。
+- `ctx.on(event, handler, priority=10, block=False)`：订阅运行事件（AmritaSense matcher，见下）。
 - `ctx.workflow(WorkflowSpec(...))`：注册工作流。
 - `ctx.command(CommandSpec(...))`：注册斜杠指令，随插件激活注册、停用失效。
 - `ctx.mcp(MCPProvider(...))`：向工具池报告 MCP 来源。
 - `ctx.apply(plugin, name=..., description=...)`：注册另一个插件，需重新加载后激活。
 
 插件禁用时会跳过激活，其工具、工作流及钩子不会加入当前工具池。`core-tools`、`files` 和 `todos` 是固定启用的核心插件，不能从界面禁用。
+
+### 事件订阅
+
+`ctx.on` 注册的是 AmritaSense 的 matcher，而不是运行时自己的列表，所以它和 AmritaSense 的其余部分共享同一套优先级、阻塞与依赖注入：
+
+```python
+from app.runtime.events import PluginEvent
+
+
+async def watch_plugin(ctx):
+    # 参数可以标注事件对象本身、Mapping，或直接声明字段名由注入填充。
+    async def on_modify(event: PluginEvent):
+        print(event.session_id, event.previous, "->", event.content)
+
+    async def on_end(session_id: str, error: str | None = None):
+        print("run ended", session_id, error)
+
+    ctx.on("message_modify", on_modify)
+    ctx.on("run_end", on_end, priority=20)
+    yield
+```
+
+- `priority` 越小越先执行；`block=True` 会停掉排在它后面的处理器。默认 `block=False`：多个插件常常监听同一个事件，先注册者不该让后面的收不到。
+- 处理器可以写成 `async def` 或普通 `def`；同步函数会被包成可等待的，签名与注解保持不变。
+- 事件对象同时是 `Mapping`，所以旧写法 `event.get("session_id")` 依然可用；也可以用 `event.session_id` 属性访问。
+- 运行时自己发出的事件：`run_start`（`session_id`、`agent`、`preset`）、`run_end`（`session_id`、`agent`、`workflow`、`error`）、`message_modify`（`session_id`、`entry_id`、`previous`、`content`、`removed_entries`、`removed_messages`、`context_messages`）。插件也可以自定义事件名，并通过 `app.runtime.events.emit` 触发。
+
+插件卸载时，运行时会把它的处理器从 AmritaSense 的注册表里删掉——注册表是进程级的，不清理的话停用插件后回调仍会指向已经失效的上下文。处理器在插件 `yield` 之后的清理代码跑完才移除，所以清理阶段仍能收到事件。
 
 ### 斜杠指令示例
 

@@ -9,6 +9,7 @@ import {
   GaugeIcon,
   GitBranchIcon,
   Loader2Icon,
+  PencilIcon,
   RotateCcwIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -221,6 +222,7 @@ function MessageBubble({
   message,
   onBranch,
   onRetry,
+  onEdit,
   runningTools,
   onCancelTool,
 }: {
@@ -229,11 +231,19 @@ function MessageBubble({
   onBranch?: (entryId: string) => void;
   /** Re-send the prompt behind a failed turn. Only wired up for errors. */
   onRetry?: () => void;
+  /**
+   * Rewrite this prompt and send it again. Only offered for the last prompt
+   * the agent never answered.
+   */
+  onEdit?: (text: string) => void;
   /** Live tool calls, so a running row can offer 取消. */
   runningTools?: Record<string, RunningTool>;
   onCancelTool?: (tool: RunningTool) => void;
 }) {
   const [copied, setCopied] = useState(false);
+  // Keep the single editable prompt draft local to its message.
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(message.content);
   const isUser = message.role === "user";
 
   const copy = async () => {
@@ -252,6 +262,56 @@ function MessageBubble({
     const files = (message.attachments ?? []).filter(
       (item) => item.kind !== "image",
     );
+
+    const submitEdit = () => {
+      const text = draft.trim();
+      if (!text || !onEdit) return;
+      setEditing(false);
+      onEdit(text);
+    };
+
+    if (editing) {
+      return (
+        <div className="flex flex-col items-end gap-2">
+          <textarea
+            autoFocus
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              // Enter sends, Shift+Enter keeps the newline; Esc abandons.
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                submitEdit();
+              } else if (event.key === "Escape") {
+                event.preventDefault();
+                setEditing(false);
+              }
+            }}
+            rows={Math.min(12, Math.max(3, draft.split("\n").length))}
+            aria-label="编辑消息"
+            className="w-full max-w-[min(80%,42rem)] resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm leading-relaxed outline-none focus:border-ring/60"
+          />
+          <div className="flex items-center gap-1.5">
+            {(message.attachments ?? []).length > 0 && (
+              <span className="text-[11px] text-muted-foreground">
+                附件会一并重发
+              </span>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setEditing(false)}
+            >
+              取消
+            </Button>
+            <Button size="sm" onClick={submitEdit} disabled={!draft.trim()}>
+              保存并重发
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="group flex flex-col items-end gap-1.5">
         {images.length > 0 && (
@@ -295,6 +355,20 @@ function MessageBubble({
             >
               <CopyIcon className="size-3.5" />
             </Button>
+            {onEdit && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => {
+                  setDraft(message.content);
+                  setEditing(true);
+                }}
+                aria-label="编辑并重发"
+                title="编辑并重发：回滚到这条消息之前，再按新内容重新提问"
+              >
+                <PencilIcon className="size-3.5" />
+              </Button>
+            )}
             {onBranch && (
               <Button
                 variant="ghost"
@@ -531,6 +605,7 @@ export function ChatView({
     clearTodos,
     sendConfirm,
     retry,
+    editPrompt,
     limitRequest,
     resolveLimit,
     runningTools,
@@ -555,6 +630,31 @@ export function ChatView({
   }, [agents, activeAgent]);
 
   const effectivePermission = narrowPermission(allowedPermissions, permission);
+
+  /**
+   * The one prompt that can still be rewritten: the last user message, with
+   * nothing but failed turns after it.
+   *
+   * Same rule as the server, so the button is never offered for a message the
+   * API would refuse — and never offered while a turn is running, when the
+   * context is still in use.
+   */
+  const editableId = useMemo(() => {
+    if (busy) return null;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message.role !== "user") continue;
+      const answered = messages
+        .slice(index + 1)
+        .some(
+          (item) =>
+            item.role === "assistant" &&
+            (item.content.trim() !== "" || !item.error),
+        );
+      return !answered && !message.streaming ? message.id : null;
+    }
+    return null;
+  }, [busy, messages]);
 
   /**
    * Save one attribute of the active model from the switcher.
@@ -773,6 +873,13 @@ export function ChatView({
               onCancelTool={setCancelTarget}
               // Allow retry only after a failed turn has finished.
               onRetry={message.error && !busy ? retry : undefined}
+              onEdit={
+                message.id === editableId
+                  ? (text) => {
+                      void editPrompt(message.id, text);
+                    }
+                  : undefined
+              }
             />
           ))}
         </div>

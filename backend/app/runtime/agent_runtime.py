@@ -35,7 +35,7 @@ from app.capabilities.permissions import LABELS as ACCESS_LABELS
 from app.capabilities.skills import build_skill_usage_prompt
 from app.core.config import DEFAULT_SYSTEM_PROMPT
 from app.core.settings import AppSettings
-from app.runtime import fallback_watch, session_memory
+from app.runtime import events, fallback_watch, session_memory
 from app.runtime.attachments import build_user_content
 from app.runtime.billing import SessionBillingBackend, TurnUsage, summarize
 from app.runtime.commands import COMMANDS, CommandContext, CommandMatch
@@ -542,14 +542,12 @@ async def run_turn(
 
     Nothing in here depends on a live socket: a browser that navigates away
     mid-answer only stops reading. Reconnect and the buffer replays. Plugin
-    hooks are dispatched here (and only here), so a hook cannot fire for a run
+    events are emitted here (and only here), so a hook cannot fire for a run
     that never started.
 
     A message that names a registered slash command is answered by that
     command instead of the agent: it needs no preset, no API key and no tools.
     """
-    from app.plugins import PLUGINS
-
     command = COMMANDS.match(user_input)
     if command is not None:
         await append_history(
@@ -569,13 +567,11 @@ async def run_turn(
         await channel.publish({"type": "done", "usage": None, "totals": None})
         return
 
-    await PLUGINS.dispatch(
-        "run_start",
-        {
-            "session_id": session_id,
-            "agent": agent.name if agent else "standard",
-            "preset": preset.name,
-        },
+    await events.emit(
+        events.RUN_START,
+        session_id=session_id,
+        agent=agent.name if agent else "standard",
+        preset=preset.name,
     )
     await append_history(
         session_id,
@@ -614,18 +610,14 @@ async def run_turn(
             await save_meta(meta)
         await channel.publish({"type": "error", "message": error})
     finally:
-        await PLUGINS.dispatch(
-            "run_end",
-            {
-                "session_id": session_id,
-                "agent": agent.name if agent else "standard",
-                "workflow": (
-                    (agent.workflow if agent else None)
-                    or settings.active_workflow
-                    or DEFAULT_WORKFLOW
-                ),
-                "error": error,
-            },
+        await events.emit(
+            events.RUN_END,
+            session_id=session_id,
+            agent=agent.name if agent else "standard",
+            workflow=(
+                (agent.workflow if agent else None) or settings.active_workflow or DEFAULT_WORKFLOW
+            ),
+            error=error,
         )
 
 

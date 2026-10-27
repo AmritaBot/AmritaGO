@@ -83,6 +83,7 @@ from app.runtime.attachments import AttachmentError, save_image, save_text
 from app.runtime.audit import BROKER
 from app.runtime.commands import COMMANDS, CommandError, fold_session
 from app.runtime.limit_gate import LIMITS
+from app.runtime.message_edit import MessageEditError, rewrite_unanswered_prompt
 from app.runtime.sessions import (
     archive_session,
     branch_session,
@@ -1200,6 +1201,39 @@ class BranchPayload(BaseModel):
     title: str | None = None
     # Branch at this bubble, keeping it. Works for a user message too.
     entry_id: str | None = None
+
+
+class MessageEditPayload(BaseModel):
+    content: str
+    # What the client believes it is editing; a mismatch means it is stale.
+    expected: str | None = None
+
+
+@app.post(f"{API}/sessions/{{session_id}}/messages/edit")
+async def edit_message_endpoint(session_id: str, payload: MessageEditPayload) -> dict[str, Any]:
+    """Rewrite the last prompt the agent never answered.
+
+    The context is rolled back to before that prompt and the failed exchange
+    leaves the transcript; the client sends the edited text as a normal turn.
+    Subscribers to ``message_modify`` are told what changed.
+    """
+    try:
+        outcome = await rewrite_unanswered_prompt(
+            session_id,
+            payload.content,
+            expected=payload.expected,
+        )
+    except MessageEditError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        "entry_id": outcome.entry_id,
+        "previous": outcome.previous,
+        "content": outcome.content,
+        "removed_entries": outcome.removed_entries,
+        "removed_messages": outcome.removed_messages,
+        "context_messages": outcome.context_messages,
+    }
 
 
 @app.post(f"{API}/sessions/{{session_id}}/archive")

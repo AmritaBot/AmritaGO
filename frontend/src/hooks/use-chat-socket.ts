@@ -830,6 +830,44 @@ export function useChatSocket(sessionId: string | null) {
   }, [send]);
 
   /**
+   * Rewrite an unanswered prompt and send it again.
+   *
+   * The server rolls the model context back to before that prompt and drops the
+   * failed exchange from the transcript; the same tail is removed here, so the
+   * optimistic bubble for the new text lands where the old one was.
+   */
+  const editPrompt = useCallback(
+    async (messageId: string, content: string) => {
+      const text = content.trim();
+      const list = messagesRef.current;
+      const index = list.findIndex((message) => message.id === messageId);
+      if (!text || index < 0 || !sessionId) return false;
+      const target = list[index];
+      if (!isMockMode()) {
+        try {
+          await api.editMessage(sessionId, {
+            content: text,
+            // A mismatch means this transcript is stale; the server refuses it.
+            expected: target.content || undefined,
+          });
+        } catch (error) {
+          toast.error(String(error).replace(/^Error:\s*/, ""));
+          return false;
+        }
+      }
+      setMessages((prev) => prev.slice(0, index));
+      const sent = send(text, target.attachments ?? []);
+      if (!sent) {
+        // The rollback already happened on disk; resync so the screen agrees.
+        void reload();
+        toast.error("连接已断开，已回滚这条消息，请稍后重新发送");
+      }
+      return sent;
+    },
+    [reload, send, sessionId],
+  );
+
+  /**
    * Answer the parked tool call.
    *
    * The edited command is always sent: the dialog may have rewritten it, and
@@ -977,6 +1015,7 @@ export function useChatSocket(sessionId: string | null) {
       send,
       stop,
       retry,
+      editPrompt,
       limitRequest,
       resolveLimit,
       sendConfirm,
@@ -1000,6 +1039,7 @@ export function useChatSocket(sessionId: string | null) {
       send,
       stop,
       retry,
+      editPrompt,
       limitRequest,
       resolveLimit,
       sendConfirm,

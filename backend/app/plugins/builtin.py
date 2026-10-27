@@ -7,7 +7,6 @@ plugin. Nothing here writes to AmritaCore's global tool manager.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any
 
 from amrita_sense.logging import logger
@@ -24,6 +23,7 @@ from app.plugins import (
 from app.plugins.files import files_plugin, install_files_plugin
 from app.plugins.shell import install_shell_plugins, pwsh_plugin, unix_plugin
 from app.plugins.todos import install_todos_plugin
+from app.runtime.events import PluginEvent
 from app.runtime.session_memory import build_tools as build_memory_tools
 
 
@@ -104,15 +104,21 @@ async def mcp_plugin(ctx: PluginContext):
 async def diagnostics_plugin(ctx: PluginContext):
     """Log run boundaries so a failed turn leaves a trace."""
 
-    def _on_run_end(event: Mapping[str, Any]) -> None:
+    async def _on_run_end(event: PluginEvent) -> None:
         logger.debug(
-            "run_end "
-            f"session={event.get('session_id')} "
-            f"workflow={event.get('workflow')} "
-            f"error={event.get('error')}"
+            f"run_end session={event.session_id} workflow={event.workflow} error={event.error}"
+        )
+
+    async def _on_message_modify(event: PluginEvent) -> None:
+        logger.debug(
+            "message_modify "
+            f"session={event.session_id} "
+            f"removed={event.removed_entries} "
+            f"{len(event.previous)}->{len(event.content)} chars"
         )
 
     ctx.on("run_end", _on_run_end)
+    ctx.on("message_modify", _on_message_modify)
     yield
 
 
