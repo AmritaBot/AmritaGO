@@ -184,23 +184,28 @@ def _render_markdown(meta: Any, entries: list[Any]) -> str:
         lines += [f"## {roles.get(entry.role, entry.role)} · {_timestamp(entry.created_at)}", ""]
         if entry.content:
             lines += [entry.content.strip(), ""]
-        if entry.reasoning:
-            lines += [
-                "<details><summary>思考过程</summary>",
-                "",
-                entry.reasoning.strip(),
-                "",
-                "</details>",
-                "",
-            ]
-        for event in entry.events or []:
-            text = str(event.get("content") or "").strip()
+        # Steps render in the order they happened: thinking, tool calls and
+        # notices alternate, and collapsing them into one block would lose that.
+        for step in entry.trace:
+            if step.get("kind") == "reasoning":
+                reasoning = str(step.get("text") or "").strip()
+                if reasoning:
+                    lines += [
+                        "<details><summary>思考过程</summary>",
+                        "",
+                        reasoning,
+                        "",
+                        "</details>",
+                        "",
+                    ]
+                continue
+            text = str(step.get("content") or "").strip()
             if not text:
                 continue
-            kind = str((event.get("metadata") or {}).get("type") or "event")
+            kind = str((step.get("metadata") or {}).get("type") or "event")
             first = text.splitlines()[0][:200]
             lines.append(f"- `{kind}` {first}")
-        if entry.events:
+        if entry.trace:
             lines.append("")
         if entry.error:
             lines += ["> **错误**：" + entry.error.replace("\n", "\n> "), ""]

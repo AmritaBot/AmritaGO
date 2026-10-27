@@ -69,13 +69,23 @@ export interface SessionMeta {
   running?: boolean;
 }
 
+/**
+ * One step of a turn, in the order it arrived.
+ *
+ * Thinking and tool calls alternate while the model works, so they are stored
+ * as one timeline rather than as a reasoning blob plus an event list.
+ */
+export type TraceStep =
+  | { kind: "reasoning"; text: string }
+  | { kind: "event"; content: string; metadata: Record<string, unknown> };
+
 export interface HistoryEntry {
   id: string;
   role: "user" | "assistant" | "system" | "tool";
   content: string;
   created_at: number;
-  reasoning?: string | null;
-  events?: MetaEvent[];
+  /** Thinking and tool steps interleaved, exactly as they happened. */
+  trace?: TraceStep[];
   error?: string | null;
   usage?: TurnUsage | null;
   steps?: number;
@@ -83,11 +93,6 @@ export interface HistoryEntry {
   workflow?: string | null;
   agent?: string | null;
   attachments?: Attachment[];
-}
-
-export interface MetaEvent {
-  content: string;
-  metadata: Record<string, unknown>;
 }
 
 export interface AppSettings {
@@ -932,10 +937,7 @@ export const api = {
    * The server rolls the context back to before it and drops the failed
    * exchange; the caller then sends the edited text as a normal turn.
    */
-  editMessage: (
-    id: string,
-    payload: { content: string; expected?: string },
-  ) =>
+  editMessage: (id: string, payload: { content: string; expected?: string }) =>
     request<{
       ok: boolean;
       entry_id: string;

@@ -58,7 +58,7 @@ async def main() -> int:
         session_id = (await client.post("/api/sessions", json={"title": "replay"})).json()["id"]
     print("session:", session_id)
 
-    # --- first connection: abandon it mid-stream --------------------------
+    # first connection: abandon it mid-stream
     async with websockets.connect(f"{WS}?session_id={session_id}") as ws:
         await ws.send(
             json.dumps(
@@ -82,7 +82,7 @@ async def main() -> int:
         print("stream state after disconnect:", state)
         assert state["active"] is True, "the run must survive a dropped socket"
 
-    # --- reconnect: the whole answer must replay from byte 0 --------------
+    # reconnect: the whole answer must replay from byte 0
     await asyncio.sleep(0.4)
     async with websockets.connect(f"{WS}?session_id={session_id}") as ws:
         events, finished = await read_until_done(ws)

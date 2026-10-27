@@ -218,6 +218,34 @@ function UserMessageBody({ content }: { content: string }) {
   );
 }
 
+/**
+ * The line that ends the part of the transcript the model no longer receives.
+ *
+ * A compaction notice means everything above it was folded into the summary, so
+ * those bubbles stay readable but no longer take part in the conversation.
+ */
+function ReadOnlyDivider() {
+  return (
+    <div
+      role="separator"
+      aria-label="以上为只读历史"
+      className="flex items-center gap-3 text-[11px] text-muted-foreground"
+    >
+      <span className="h-px flex-1 bg-border" />
+      <span className="shrink-0">以上为只读历史，已折叠进摘要</span>
+      <span className="h-px flex-1 bg-border" />
+    </div>
+  );
+}
+
+/** Whether this bubble carries a settled compaction notice. */
+function endsFoldedHistory(message: ChatMessage): boolean {
+  return message.events.some((event) => {
+    const extra = String(event.metadata.extra_type ?? "");
+    return extra === "compaction_finished" || extra === "compaction_skipped";
+  });
+}
+
 function MessageBubble({
   message,
   onBranch,
@@ -297,11 +325,7 @@ function MessageBubble({
                 附件会一并重发
               </span>
             )}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setEditing(false)}
-            >
+            <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
               取消
             </Button>
             <Button size="sm" onClick={submitEdit} disabled={!draft.trim()}>
@@ -865,22 +889,24 @@ export function ChatView({
             <EmptyState onPick={pickStarter} disabled={busy || uploading > 0} />
           )}
           {messages.map((message) => (
-            <MessageBubble
-              key={message.id}
-              message={message}
-              onBranch={onBranch}
-              runningTools={runningTools}
-              onCancelTool={setCancelTarget}
-              // Allow retry only after a failed turn has finished.
-              onRetry={message.error && !busy ? retry : undefined}
-              onEdit={
-                message.id === editableId
-                  ? (text) => {
-                      void editPrompt(message.id, text);
-                    }
-                  : undefined
-              }
-            />
+            <div key={message.id} className="flex flex-col gap-2">
+              <MessageBubble
+                message={message}
+                onBranch={onBranch}
+                runningTools={runningTools}
+                onCancelTool={setCancelTarget}
+                // Allow retry only after a failed turn has finished.
+                onRetry={message.error && !busy ? retry : undefined}
+                onEdit={
+                  message.id === editableId
+                    ? (text) => {
+                        void editPrompt(message.id, text);
+                      }
+                    : undefined
+                }
+              />
+              {endsFoldedHistory(message) && <ReadOnlyDivider />}
+            </div>
           ))}
         </div>
 

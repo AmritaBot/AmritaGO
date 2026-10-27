@@ -622,29 +622,32 @@ export function useChatSocket(sessionId: string | null) {
             .filter(
               (entry) => entry.role === "user" || entry.role === "assistant",
             )
-            .map((entry) => ({
-              id: entry.id,
-              role: entry.role as "user" | "assistant",
-              content: entry.content,
-              reasoning: entry.reasoning ?? "",
-              events: entry.events ?? [],
-              // Rebuild traces as reasoning then steps because history stores them separately.
-              trace: [
-                ...(entry.reasoning
-                  ? [{ kind: "reasoning" as const, text: entry.reasoning }]
-                  : []),
-                ...(entry.events ?? []).map((item) => ({
-                  kind: "event" as const,
-                  content: item.content,
-                  metadata: item.metadata,
-                })),
-              ],
-              streaming: false,
-              error: entry.error ?? undefined,
-              usage: entry.usage ?? null,
-              attachments: entry.attachments ?? [],
-              createdAt: entry.created_at,
-            })),
+            .map((entry) => {
+              const steps = entry.trace ?? [];
+              return {
+                id: entry.id,
+                role: entry.role as "user" | "assistant",
+                content: entry.content,
+                // ``trace`` is the stored timeline. The split fields below are
+                // derived, because a few UI checks read them by name.
+                reasoning: steps
+                  .flatMap((step) =>
+                    step.kind === "reasoning" ? [step.text] : [],
+                  )
+                  .join(""),
+                events: steps.flatMap((step) =>
+                  step.kind === "event"
+                    ? [{ content: step.content, metadata: step.metadata }]
+                    : [],
+                ),
+                trace: steps,
+                streaming: false,
+                error: entry.error ?? undefined,
+                usage: entry.usage ?? null,
+                attachments: entry.attachments ?? [],
+                createdAt: entry.created_at,
+              };
+            }),
         );
       } catch {
         setMessages([]);

@@ -48,6 +48,8 @@ from app.runtime.sessions import (
     record_turn_usage,
     save_context,
     save_meta,
+    trace_event,
+    trace_reasoning,
 )
 from app.runtime.stream_hub import StreamChannel
 from app.runtime.tool_limit import for_run
@@ -327,7 +329,6 @@ async def _iter_events(
         }
 
     history_events: list[dict[str, Any]] = []
-    reasoning_parts: list[str] = []
     answer_parts: list[str] = []
     error_text: str | None = None
     steps = 0
@@ -338,6 +339,22 @@ async def _iter_events(
     last_delta_at: float | None = None
     last_rounds = 0
 
+    def announce_compaction() -> dict[str, Any]:
+        """The compaction outcome, also kept in the transcript.
+
+        Recording it is what lets the UI mark the read-only boundary after a
+        reload; without it the line between folded history and new turns would
+        exist only in the live stream.
+        """
+        assert fold_plan is not None
+        notice = _compaction_outcome(
+            fold_plan,
+            chat._di_memory.memory,
+            preview.abstract if preview is not None else "",
+        )
+        trace_event(history_events, notice["content"], notice["metadata"])
+        return notice
+
     async with chat.begin():
         async for item in chat.io_stream.get_response_generator():
             if isinstance(item, MessageWithMetadata):
@@ -345,7 +362,7 @@ async def _iter_events(
                 metadata = payload["metadata"]
                 if _is_reasoning(metadata):
                     # Reasoning is always streamed and persisted; the UI decides how loud it is.
-                    reasoning_parts.append(payload["content"])
+                    trace_reasoning(history_events, payload["content"])
                     yield {"type": "reasoning", "text": payload["content"]}
                     continue
                 if metadata.get("type") == "error":
@@ -359,7 +376,9 @@ async def _iter_events(
                     if tool_id and tool_id not in counted_tools:
                         counted_tools.add(tool_id)
                         tool_calls += 1
-                history_events.append(payload)
+                # Steps are appended in arrival order: a reasoning step is
+                # reopened only when a tool call came between them.
+                trace_event(history_events, payload["content"], metadata)
                 yield {"type": "meta", **payload}
                 rounds = len(billing.records)
                 if rounds != last_rounds:
@@ -368,11 +387,7 @@ async def _iter_events(
                     if fold_plan is not None and not compaction_reported:
                         # First request runs after ``MANAGE_CONTEXT``, so this proves the fold landed.
                         compaction_reported = True
-                        yield _compaction_outcome(
-                            fold_plan,
-                            chat._di_memory.memory,
-                            preview.abstract if preview is not None else "",
-                        )
+                        yield announce_compaction()
                 continue
 
             text = (
@@ -393,11 +408,7 @@ async def _iter_events(
     if fold_plan is not None and not compaction_reported:
         # No request completed, so the outcome was never announced.
         compaction_reported = True
-        yield _compaction_outcome(
-            fold_plan,
-            chat._di_memory.memory,
-            preview.abstract if preview is not None else "",
-        )
+        yield announce_compaction()
 
     finished_at = time.time()
     answer = "".join(answer_parts)
@@ -433,8 +444,7 @@ async def _iter_events(
             HistoryEntry(
                 role="assistant",
                 content=answer,
-                reasoning="".join(reasoning_parts) or None,
-                events=history_events,
+                trace=history_events,
                 error=error_text,
                 usage=usage,
                 steps=steps,
@@ -508,7 +518,14 @@ async def _run_command(
             HistoryEntry(
                 role="assistant",
                 content=text,
-                events=context.events,
+                trace=[
+                    {
+                        "kind": "event",
+                        "content": event["content"],
+                        "metadata": event["metadata"],
+                    }
+                    for event in context.events
+                ],
                 workflow="command",
                 agent=spec.name,
             ),

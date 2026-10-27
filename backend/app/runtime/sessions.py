@@ -6,6 +6,7 @@ import asyncio
 import shutil
 import time
 import uuid
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -13,7 +14,7 @@ from typing import Any, Literal
 from amrita_core.types import MemoryModel
 from amrita_core.types.message import Message
 from amrita_sense.logging import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.core.config import PATHS
 from app.core.storage import (
@@ -50,14 +51,21 @@ class SessionMeta(BaseModel):
 
 
 class HistoryEntry(BaseModel):
-    """One visible chat bubble. Tool traffic stays in the JSON context only."""
+    """One visible chat bubble, plus the turn's steps in arrival order.
+
+    ``trace`` is the only place a turn's steps are stored. Thinking and tool
+    calls alternate while the model works, and their order is the only thing
+    that explains the result, so splitting them into a reasoning blob plus an
+    event list would lose exactly that. Older files do split them
+    (``reasoning`` / ``events``); :meth:`_migrate_trace` folds those into one
+    timeline on read and the keys are no longer written.
+    """
 
     id: str = Field(default_factory=lambda: uuid.uuid4().hex)
     role: Role
     content: str
     created_at: float = Field(default_factory=time.time)
-    reasoning: str | None = None
-    events: list[dict[str, Any]] = Field(default_factory=list)
+    trace: list[dict[str, Any]] = Field(default_factory=list)
     error: str | None = None
     usage: TurnUsage | None = None
     steps: int = 0
@@ -66,6 +74,56 @@ class HistoryEntry(BaseModel):
     agent: str | None = None
     # Images pasted into the composer / long pastes stored as files.
     attachments: list[dict[str, Any]] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_trace(cls, data: Any) -> Any:
+        """Fold a legacy ``reasoning`` + ``events`` record into one timeline.
+
+        The old split had no ordering information beyond "thinking came first",
+        which is the best that data can support; new turns are stored in the
+        order the steps actually arrived.
+        """
+        if not isinstance(data, dict) or data.get("trace"):
+            return data
+        reasoning = data.get("reasoning")
+        events = data.get("events") or []
+        if not reasoning and not events:
+            return data
+        trace: list[dict[str, Any]] = []
+        if isinstance(reasoning, str) and reasoning.strip():
+            trace.append({"kind": "reasoning", "text": reasoning})
+        trace.extend(
+            {
+                "kind": "event",
+                "content": str(event.get("content") or ""),
+                "metadata": dict(event.get("metadata") or {}),
+            }
+            for event in events
+            if isinstance(event, dict)
+        )
+        legacy = {"reasoning", "events"}
+        return {**{key: value for key, value in data.items() if key not in legacy}, "trace": trace}
+
+
+def trace_reasoning(trace: list[dict[str, Any]], text: str) -> None:
+    """Append reasoning text, extending the step that is still open.
+
+    Providers stream thinking in tiny chunks; one step per chunk would turn a
+    single paragraph into hundreds of rows and bury the tool calls between them.
+    """
+    if not text:
+        return
+    last = trace[-1] if trace else None
+    if last is not None and last.get("kind") == "reasoning":
+        last["text"] = f"{last.get('text') or ''}{text}"
+        return
+    trace.append({"kind": "reasoning", "text": text})
+
+
+def trace_event(trace: list[dict[str, Any]], content: str, metadata: Mapping[str, Any]) -> None:
+    """Append one step: a tool call, a notice, a command's output."""
+    trace.append({"kind": "event", "content": content, "metadata": dict(metadata)})
 
 
 def _session_dir(session_id: str) -> Path:

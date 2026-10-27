@@ -67,7 +67,7 @@ class Paths:
         default_factory=lambda: _env_path("AMRITA_GO_FRONTEND", _frontend_dist())
     )
 
-    # --- user-global, under ~/.amrita ---------------------------------- #
+    # user-global, under ~/.amrita
 
     @property
     def settings(self) -> Path:
@@ -113,7 +113,7 @@ class Paths:
     def plugin_configs(self) -> Path:
         return self.data / "plugin_configs"
 
-    # --- workspace-local, under <repo>/.amrita ------------------------- #
+    # workspace-local, under <repo>/.amrita
 
     @property
     def workspace_skills(self) -> Path:

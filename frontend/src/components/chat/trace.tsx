@@ -566,10 +566,10 @@ function thinkingLabel(ms?: number): string | null {
 /**
  * Every step of the turn, oldest first.
  *
- * ``message.trace`` is what the stream recorded, so the order is the order the
- * events arrived. A message loaded from disk has no trace (the transcript only
- * ever stored the reasoning blob and the events separately), so it falls back to
- * "reasoning, then steps" — the one ordering the stored data can justify.
+ * ``message.trace`` is the stored timeline, so the order is the order the
+ * events arrived. The fallback only covers a bubble that has not been through
+ * the stream (an optimistic or mock message), where there is nothing but the
+ * split fields to go on.
  */
 export function Trace({
   message,

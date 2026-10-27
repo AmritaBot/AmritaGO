@@ -37,7 +37,7 @@ async def main() -> int:
         assert history["entries"] == [], history
         print("history empty: ok")
 
-    # --- socket -----------------------------------------------------------
+    # socket
     async with websockets.connect(f"{WS}?session_id={session_id}") as ws:
         await ws.send(json.dumps({"type": "ping"}))
         pong = json.loads(await asyncio.wait_for(ws.recv(), 5))
