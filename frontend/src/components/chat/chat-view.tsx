@@ -639,6 +639,8 @@ export function ChatView({
     stopping,
     offerPrompt,
     revokePrompt,
+    revokedDraft,
+    clearRevokedDraft,
   } = useChatSocketFor(sessionId);
   const [permission, setPermission] = useState<Permission>("workspace");
   // The tool call the user asked to cancel; the dialog collects the reason.
@@ -957,6 +959,8 @@ export function ChatView({
           stopping={stopping}
           pendingPrompt={pendingPrompt}
           inject={injectCapability}
+          seed={revokedDraft}
+          onSeedConsumed={clearRevokedDraft}
           workspaces={workspaces}
           activeWorkspace={activeWorkspace}
           agents={agents}

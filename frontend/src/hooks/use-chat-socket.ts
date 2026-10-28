@@ -178,6 +178,12 @@ export function useChatSocket(sessionId: string | null) {
   // Track a stop waiting for its suspend point so a second press can escalate it.
   const stoppingRef = useRef(false);
   const pendingIdRef = useRef<string | null>(null);
+  // The queued prompt itself, so a revoke can hand its text back.
+  const pendingPromptRef = useRef<QueuedPromptHandle | null>(null);
+  // Bubble drawn when the prompt was queued: reused by ``start``, removed on revoke.
+  const pendingBubbleRef = useRef<string | null>(null);
+  // Text of a prompt the user revoked, handed back to the composer.
+  const [revokedDraft, setRevokedDraft] = useState<string | null>(null);
 
   sessionRef.current = sessionId;
   messagesRef.current = messages;
@@ -299,7 +305,7 @@ export function useChatSocket(sessionId: string | null) {
             : message,
         ),
       );
-      // Drop empty assistant bubbles unless they contain an error or notice.
+      // Drop assistant bubbles that hold nothing: a stopped turn keeps only its steps.
       setMessages((prev) =>
         prev.filter(
           (message) =>
@@ -308,7 +314,8 @@ export function useChatSocket(sessionId: string | null) {
               !message.streaming &&
               !message.content &&
               !message.error &&
-              message.events.length === 0
+              message.events.length === 0 &&
+              message.trace.length === 0
             ),
         ),
       );
@@ -340,15 +347,19 @@ export function useChatSocket(sessionId: string | null) {
           clearTimer();
           setMessages((prev) => {
             const base = [...prev];
-            const last = base.at(-1);
-            const before = base.at(-2);
-            if (
-              last?.role === "user" &&
-              before?.role === "user" &&
-              last.content === before.content
-            ) {
-              base.pop();
+            if (pendingBubbleRef.current === null) {
+              // Replay: drop the trailing duplicate the optimistic bubble left behind.
+              const last = base.at(-1);
+              const before = base.at(-2);
+              if (
+                last?.role === "user" &&
+                before?.role === "user" &&
+                last.content === before.content
+              ) {
+                base.pop();
+              }
             }
+            // A queued prompt already has its bubble and stays exactly there.
             if (!id) return base;
             return base.map((message) =>
               message.id === id
@@ -368,7 +379,9 @@ export function useChatSocket(sessionId: string | null) {
           setBusy(true);
           // The server took the queued message to start this turn.
           setPendingPrompt(null);
+          pendingPromptRef.current = null;
           pendingIdRef.current = null;
+          pendingBubbleRef.current = null;
           stoppingRef.current = false;
           setStopping(false);
           setInjectCapability(event.inject ?? null);
@@ -515,14 +528,28 @@ export function useChatSocket(sessionId: string | null) {
         }
         case "queued": {
           setPendingPrompt(event.handle);
+          pendingPromptRef.current = event.handle;
           pendingIdRef.current = event.handle.id;
           break;
         }
         case "unqueued": {
-          // Keep the text visible when too_late means the message already started.
+          // ``too_late`` means the turn already started, so the bubble stays.
           if (pendingIdRef.current === event.handle_id) {
+            if (event.status === "revoked") {
+              const bubbleId = pendingBubbleRef.current;
+              if (bubbleId) {
+                // It never became a turn, so it must not stay in the transcript.
+                setMessages((prev) =>
+                  prev.filter((message) => message.id !== bubbleId),
+                );
+              }
+              const text = pendingPromptRef.current?.content;
+              if (text) setRevokedDraft(text);
+            }
             setPendingPrompt(null);
+            pendingPromptRef.current = null;
             pendingIdRef.current = null;
+            pendingBubbleRef.current = null;
           }
           break;
         }
@@ -555,7 +582,9 @@ export function useChatSocket(sessionId: string | null) {
           setLiveUsage(null);
           setRunningTools({});
           setPendingPrompt(null);
+          pendingPromptRef.current = null;
           pendingIdRef.current = null;
+          pendingBubbleRef.current = null;
           stoppingRef.current = false;
           setStopping(false);
           setInjectCapability(null);
@@ -678,6 +707,7 @@ export function useChatSocket(sessionId: string | null) {
       setPendingConfirms([]);
       setRunningTools({});
       setPendingPrompt(null);
+      pendingPromptRef.current = null;
       pendingIdRef.current = null;
       stoppingRef.current = false;
       setStopping(false);
@@ -905,6 +935,23 @@ export function useChatSocket(sessionId: string | null) {
       if (isMockMode() || !socket || socket.readyState !== WebSocket.OPEN) {
         return false;
       }
+      // Draw it now: the server never echoes a queued prompt, and the bubble belongs at the moment it was sent.
+      const bubbleId = crypto.randomUUID();
+      pendingBubbleRef.current = bubbleId;
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: bubbleId,
+          role: "user",
+          content: body,
+          reasoning: "",
+          events: [],
+          trace: [],
+          streaming: false,
+          attachments,
+          createdAt: Date.now() / 1000,
+        },
+      ]);
       stoppingRef.current = true;
       setStopping(true);
       socket.send(
@@ -922,6 +969,9 @@ export function useChatSocket(sessionId: string | null) {
     [sessionId],
   );
 
+  /** Forget the text restored into the composer after a revocation. */
+  const clearRevokedDraft = useCallback(() => setRevokedDraft(null), []);
+
   /** Withdraw a queued message that has not started yet. */
   const revokePrompt = useCallback(() => {
     const socket = socketRef.current;
@@ -929,7 +979,9 @@ export function useChatSocket(sessionId: string | null) {
     if (!sessionId || !handle) return;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       setPendingPrompt(null);
+      pendingPromptRef.current = null;
       pendingIdRef.current = null;
+      pendingBubbleRef.current = null;
       return;
     }
     socket.send(
@@ -1168,6 +1220,8 @@ export function useChatSocket(sessionId: string | null) {
       stop,
       offerPrompt,
       revokePrompt,
+      revokedDraft,
+      clearRevokedDraft,
       retry,
       editPrompt,
       limitRequest,
@@ -1197,6 +1251,8 @@ export function useChatSocket(sessionId: string | null) {
       stop,
       offerPrompt,
       revokePrompt,
+      revokedDraft,
+      clearRevokedDraft,
       retry,
       editPrompt,
       limitRequest,

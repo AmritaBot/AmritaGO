@@ -55,7 +55,7 @@ from app.runtime.sessions import (
     trace_reasoning,
 )
 from app.runtime.stream_hub import StreamChannel
-from app.runtime.tool_limit import STOP_NOTICE, for_run
+from app.runtime.tool_limit import for_run
 from app.runtime.workflows import DEFAULT_WORKFLOW, WORKFLOWS
 
 
@@ -653,11 +653,9 @@ async def _finalize_stopped(
     different error.
     """
     try:
-        if not draft.answer_text:
-            # Add a notice if an immediate stop arrives before the model answers.
-            draft.answer.append(STOP_NOTICE)
         if not draft.committed:
             await _commit_interrupted(draft, user_input, attachments)
+        # Keep only what the turn actually produced; there is no reply to invent for a stop.
         if not draft.history_written and (draft.answer_text or draft.error or draft.trace):
             await append_history(
                 draft.session_id,

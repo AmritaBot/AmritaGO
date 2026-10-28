@@ -55,9 +55,6 @@ ABORT_NOTICE = (
     "已按你的选择中断本轮：工具调用预算用完，模型不再继续调用工具。需要接着做时发一条新消息即可。"
 )
 
-# What the transcript says when the user stopped the turn on purpose.
-STOP_NOTICE = "已按你的要求停止本轮：保留已经完成的内容，新消息会在下一轮继续。"
-
 
 def for_run(config: AmritaConfig | None = None) -> AmritaConfig:
     """A per-run config copy, so a budget change stays inside one session.
@@ -176,18 +173,22 @@ class LimitAwareStrategy(ReActAgentStrategy):
     async def _finish_on_stop(self) -> None:
         """End the turn where it stands, keeping what the model produced.
 
-        Same mechanism as :meth:`_abort`: storing a final response is what stops
-        ``LLM_COMPLETION`` from asking the model one more time, so a stop costs
-        no extra request and no extra tokens.
+        The stored response is **empty** on purpose. It exists only to stop
+        ``LLM_COMPLETION`` from asking the model one more time; it is not
+        something the model said. Writing a "已停止" sentence here would put a
+        fake assistant reply between the user's two messages, and the next turn
+        would read it as its own previous answer — which is exactly what makes a
+        stop look like the agent answered something it never did.
+
+        Same mechanism as :meth:`_abort`: storing a final response is what skips
+        the last request, so a stop costs no extra tokens.
         """
         if self._stopped:
             return
         self._stopped = True
         self._suggested_stop = True
-        # Emit the notice as the answer so it reaches history and context as well as the live stream.
-        await self.io_stream.yield_response(STOP_NOTICE)
         self._store_final_response(
-            UniResponse(role="assistant", content=STOP_NOTICE, tool_calls=None)
+            UniResponse(role="assistant", content="", tool_calls=None)
         )
 
     async def call_tool(self, tool_call: ToolCall) -> str:

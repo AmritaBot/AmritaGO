@@ -151,6 +151,8 @@ export function Composer({
   stopping,
   pendingPrompt,
   inject,
+  seed,
+  onSeedConsumed,
   workspaces,
   activeWorkspace,
   agents,
@@ -182,6 +184,9 @@ export function Composer({
   pendingPrompt?: { content: string } | null;
   /** What the running workflow can do about a mid-run message. */
   inject?: InjectCapability | null;
+  /** Text to put back in the box, e.g. a queued message that was withdrawn. */
+  seed?: string | null;
+  onSeedConsumed?: () => void;
   workspaces: WorkspaceOption[];
   activeWorkspace: string | null;
   agents: AgentOption[];
@@ -220,6 +225,14 @@ export function Composer({
   const rootRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // A revoked queue item returns to the box unless something newer was typed.
+  useEffect(() => {
+    if (seed === null || seed === undefined) return;
+    setDraft((prev) => (prev.trim() ? prev : seed));
+    onSeedConsumed?.();
+    textareaRef.current?.focus();
+  }, [seed, onSeedConsumed]);
 
   const clientCommands: CommandOption[] = useMemo(
     () => [
