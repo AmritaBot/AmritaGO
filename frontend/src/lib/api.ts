@@ -117,7 +117,7 @@ export interface AppSettings {
   tool_limit_refusal_rounds: number;
   /** Seconds the parked run waits for an answer before winding down. */
   tool_limit_timeout: number;
-  /** Wall-clock limit for one tool call, in seconds; `0` disables it. */
+  /** Wall-clock limit for one tool call, in seconds; `-1` (or `0`) disables it. */
   tool_timeout: number;
   updated_at: number;
 }

@@ -431,7 +431,7 @@ function ToolRow({
             <span>
               {running.timeout > 0
                 ? `${running.timeout} 秒后自动终止`
-                : "不限制"}
+                : "永不超时"}
             </span>
           </div>
         )}

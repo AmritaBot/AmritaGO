@@ -35,6 +35,14 @@ function text(value: number | null | undefined, fallback: number): string {
     : String(value);
 }
 
+/** ``Number("")`` is 0, which would silently mean "no limit"; refuse it instead. */
+function parseAll(values: string[]): number[] | null {
+  const parsed = values.map((value) =>
+    value.trim() === "" ? Number.NaN : Number(value),
+  );
+  return parsed.every(Number.isFinite) ? parsed : null;
+}
+
 export function BehaviourPanel({
   settings,
   onSaved,
@@ -150,7 +158,6 @@ export function BehaviourPanel({
               id="limit-extension"
               type="number"
               min={1}
-              max={100}
               value={extension}
               disabled={saving}
               onChange={(event) => setExtension(event.target.value)}
@@ -163,7 +170,6 @@ export function BehaviourPanel({
               id="limit-refusal"
               type="number"
               min={1}
-              max={50}
               value={refusalRequests}
               disabled={saving}
               onChange={(event) => setRefusalRequests(event.target.value)}
@@ -176,8 +182,7 @@ export function BehaviourPanel({
               <Input
                 id="limit-timeout"
                 type="number"
-                min={10}
-                max={3600}
+                min={1}
                 value={timeout}
                 disabled={saving}
                 onChange={(event) => setTimeoutValue(event.target.value)}
@@ -187,20 +192,28 @@ export function BehaviourPanel({
           )}
           <Button
             disabled={saving}
-            onClick={() =>
+            onClick={() => {
+              const parsed = parseAll(
+                ask ? [extension, refusalRequests, timeout] : [extension, refusalRequests],
+              );
+              if (!parsed) {
+                toast.error("请填写有效的数字");
+                return;
+              }
+              const [ext, refusals, wait] = parsed;
               void save(
                 ask
                   ? {
-                      tool_limit_extension: Number(extension),
-                      tool_limit_refusal_rounds: Number(refusalRequests),
-                      tool_limit_timeout: Number(timeout),
+                      tool_limit_extension: ext,
+                      tool_limit_refusal_rounds: refusals,
+                      tool_limit_timeout: wait,
                     }
                   : {
-                      tool_limit_extension: Number(extension),
-                      tool_limit_refusal_rounds: Number(refusalRequests),
+                      tool_limit_extension: ext,
+                      tool_limit_refusal_rounds: refusals,
                     },
-              )
-            }
+              );
+            }}
           >
             保存
           </Button>
@@ -225,9 +238,9 @@ export function BehaviourPanel({
           <InfoHint label="工具超时说明">
             单次工具调用的<strong>墙钟上限</strong>。超过就终止这次调用，
             把「已超时」作为结果交给模型，本轮继续——不是杀掉整个回答。 填{" "}
-            <code>0</code> 表示不限制。工具自己设的更短上限（例如 shell 的{" "}
-            <code>timeout</code>{" "}
-            参数）会先到，因此仍然生效；等待人工确认的时间也算在这里，
+            <code>-1</code> 表示<strong>永不超时</strong>，工具会一直跑到它自己结束、
+            失败或被手动取消。工具自己设的更短上限（例如 shell 的{" "}
+            <code>timeout</code> 参数）会先到，因此仍然生效；等待人工确认的时间也算在这里，
             所以请保持它大于确认等待上限。
           </InfoHint>
         </div>
@@ -238,8 +251,7 @@ export function BehaviourPanel({
             <Input
               id="tool-timeout"
               type="number"
-              min={0}
-              max={86400}
+              min={-1}
               value={toolTimeout}
               disabled={saving}
               onChange={(event) => setToolTimeout(event.target.value)}
@@ -248,7 +260,14 @@ export function BehaviourPanel({
           </div>
           <Button
             disabled={saving}
-            onClick={() => void save({ tool_timeout: Number(toolTimeout) })}
+            onClick={() => {
+              const parsed = parseAll([toolTimeout]);
+              if (!parsed) {
+                toast.error("请填写有效的数字");
+                return;
+              }
+              void save({ tool_timeout: parsed[0] });
+            }}
           >
             保存
           </Button>

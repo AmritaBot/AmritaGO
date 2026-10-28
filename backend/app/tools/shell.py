@@ -561,7 +561,8 @@ class ShellSession:
 
             env = os.environ.copy()
             env.update(extra_env or {})
-            limit = min(max(1.0, timeout), MAX_TIMEOUT)
+            # ``None`` waits forever; the caller's own cap is what bounds a run.
+            limit = None if timeout <= 0 else max(1.0, timeout)
 
             # The process cwd stays native; only the script text uses the shell's form.
             native_cwd = str(self.cwd)

@@ -44,16 +44,17 @@ class AppSettings(BaseModel):
     """Developer mode: reload plugins to prove they are side-effect free."""
     tool_limit_policy: Literal["graceful", "ask"] = "graceful"
     """Budget policy: ``graceful`` winds down, ``ask`` parks and offers extend / graceful / abort."""
-    tool_limit_extension: int = Field(default=5, ge=1, le=100)
+    tool_limit_extension: int = Field(default=5, ge=1)
     """LLM requests appended to the same turn on each "继续迭代" answer."""
-    tool_limit_refusal_rounds: int = Field(default=5, ge=1, le=50)
+    tool_limit_refusal_rounds: int = Field(default=5, ge=1)
     """Wind-down LLM requests after the budget is spent, applied to ``agent_tool_refusal_rounds``."""
-    tool_limit_timeout: float = Field(default=300.0, ge=10, le=3600)
+    tool_limit_timeout: float = Field(default=300.0, ge=1)
     """How long the parked run waits for an answer before winding down."""
-    tool_timeout: float = Field(default=600.0, ge=0, le=86400)
+    tool_timeout: float = Field(default=600.0, ge=-1)
     """Wall-clock limit for one tool call, in seconds.
 
-    ``0`` disables it. This is the outer bound: a tool that enforces a shorter
+    ``-1`` (or ``0``) disables it: the call runs until it returns, fails, or the
+    user cancels it. This is the outer bound: a tool that enforces a shorter
     limit of its own (the shell plugin's ``timeout`` argument) still returns
     first. Time spent parked on a confirmation prompt does **not** count — the
     clock is restarted when the user answers, because approval has no deadline.

@@ -64,17 +64,15 @@ class ShellConfig(BaseModel):
     )
     default_timeout: float = Field(
         default=DEFAULT_TIMEOUT,
-        ge=1,
-        le=MAX_TIMEOUT,
+        ge=-1,
         title="默认超时（秒）",
-        description="模型未指定 timeout 时的等待上限。",
+        description="模型未指定 timeout 时的等待上限；0 或 -1 表示永不超时。",
     )
     max_timeout: float = Field(
         default=MAX_TIMEOUT,
-        ge=1,
-        le=3600,
+        ge=-1,
         title="超时上限（秒）",
-        description="模型可以要求更长的超时，但不得超过这个值。",
+        description="模型可以要求更长的超时，但不得超过这个值；0 或 -1 表示不设上限。",
     )
     allow_outside_workspace: bool = Field(
         default=False,
@@ -384,10 +382,17 @@ def _tool_pair(kind: ShellKind, plugin_name: str) -> list[ToolData]:
             return f"error: {exc}"
 
         try:
-            timeout = float(data.get(_TIMEOUT_ARG) or config.default_timeout)
+            raw_timeout = data.get(_TIMEOUT_ARG)
+            timeout = (
+                float(raw_timeout)
+                if raw_timeout is not None
+                else config.default_timeout
+            )
         except (TypeError, ValueError):
             timeout = config.default_timeout
-        timeout = min(max(1.0, timeout), config.max_timeout)
+        # Non-positive means no deadline at all; a positive cap still bounds it.
+        if timeout > 0 and config.max_timeout > 0:
+            timeout = min(timeout, config.max_timeout)
 
         session = await SHELLS.get(
             kind,
@@ -424,6 +429,10 @@ def _tool_pair(kind: ShellKind, plugin_name: str) -> list[ToolData]:
         )
         exe = configured or "(PATH)"
         flavour = _flavour_for(kind, config)
+        default_text = (
+            "none" if config.default_timeout <= 0 else f"{config.default_timeout:g}s"
+        )
+        cap_text = "none" if config.max_timeout <= 0 else f"{config.max_timeout:g}s"
         lines = [
             f"shell: {kind}",
             f"flavour: {flavour}",
@@ -434,7 +443,7 @@ def _tool_pair(kind: ShellKind, plugin_name: str) -> list[ToolData]:
             f"workspace_guard: {'off' if config.allow_outside_workspace else 'on'}",
             f"audit: {config.audit}",
             f"encoding: {config.encoding}",
-            f"timeout: {config.default_timeout:.0f}s (cap {config.max_timeout:.0f}s)",
+            f"timeout: {default_text} (cap {cap_text})",
         ]
         if kind == "unix" and flavour == "wsl":
             distros = ", ".join(wsl_distros()) or "none"

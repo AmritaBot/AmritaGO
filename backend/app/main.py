@@ -146,12 +146,12 @@ class SettingsUpdate(BaseModel):
     # ``graceful`` | ``ask`` — what a run does when it spends its tool budget.
     tool_limit_policy: Literal["graceful", "ask"] | None = None
     # Rounds appended to the same turn each time the user asks to continue.
-    tool_limit_extension: int | None = Field(default=None, ge=1, le=100)
+    tool_limit_extension: int | None = Field(default=None, ge=1)
     # Refusal rounds granted to a cut-off run so it can close the turn civilly.
-    tool_limit_refusal_rounds: int | None = Field(default=None, ge=1, le=50)
-    tool_limit_timeout: float | None = Field(default=None, ge=10, le=3600)
-    # Wall-clock limit for one tool call; ``0`` disables it.
-    tool_timeout: float | None = Field(default=None, ge=0, le=86400)
+    tool_limit_refusal_rounds: int | None = Field(default=None, ge=1)
+    tool_limit_timeout: float | None = Field(default=None, ge=1)
+    # Wall-clock limit for one tool call; ``-1`` or ``0`` disables it.
+    tool_timeout: float | None = Field(default=None, ge=-1)
 
 
 class ModelPayload(BaseModel):
