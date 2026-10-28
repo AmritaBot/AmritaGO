@@ -55,6 +55,9 @@ ABORT_NOTICE = (
     "已按你的选择中断本轮：工具调用预算用完，模型不再继续调用工具。需要接着做时发一条新消息即可。"
 )
 
+# What the transcript says when the user stopped the turn on purpose.
+STOP_NOTICE = "已按你的要求停止本轮：保留已经完成的内容，新消息会在下一轮继续。"
+
 
 def for_run(config: AmritaConfig | None = None) -> AmritaConfig:
     """A per-run config copy, so a budget change stays inside one session.
@@ -104,6 +107,8 @@ class LimitAwareStrategy(ReActAgentStrategy):
     _asked_at: int = -1
     # A grant is outstanding, so the guards must keep looping.
     _granted: bool = False
+    # The stop notice has already been recorded, so it is emitted once.
+    _stopped: bool = False
 
     @property
     def budget_exhausted(self) -> bool:
@@ -149,6 +154,42 @@ class LimitAwareStrategy(ReActAgentStrategy):
         # ``graceful``: AmritaCore's own wind-down.
         await super().on_limited()
 
+    async def single_execute(self) -> bool:
+        """One strategy round, cut short when the user asked to stop.
+
+        A graceful stop parks the interpreter at a declared suspend point and
+        then sets ``stop_requested``. This is the first thing that runs after
+        the interpreter is released, so returning ``False`` here is what turns
+        "parked" into "ended": the legacy loop leaves its ``WHILE`` and the step
+        loop marks the step finished, and both reach ``AGENT_POST_PROCESS`` —
+        which is what commits the context.
+
+        ``_suggested_stop`` is set as well because the step loop's conditions
+        read it, not this method's return value.
+        """
+        channel = self._channel()
+        if channel is not None and channel.stop_requested:
+            await self._finish_on_stop()
+            return False
+        return await super().single_execute()
+
+    async def _finish_on_stop(self) -> None:
+        """End the turn where it stands, keeping what the model produced.
+
+        Same mechanism as :meth:`_abort`: storing a final response is what stops
+        ``LLM_COMPLETION`` from asking the model one more time, so a stop costs
+        no extra request and no extra tokens.
+        """
+        if self._stopped:
+            return
+        self._stopped = True
+        self._suggested_stop = True
+        # Emit the notice as the answer so it reaches history and context as well as the live stream.
+        await self.io_stream.yield_response(STOP_NOTICE)
+        self._store_final_response(
+            UniResponse(role="assistant", content=STOP_NOTICE, tool_calls=None)
+        )
+
     async def call_tool(self, tool_call: ToolCall) -> str:
         """Execute one tool call, bounded in time and cancelable by the user.
 
@@ -166,7 +207,12 @@ class LimitAwareStrategy(ReActAgentStrategy):
         arguments = _clip(str(tool_call.function.arguments or ""), MAX_RECORDED_ARGS)
         # Record the requested arguments before execution so users can inspect them.
         await self._record_call(tool_call, arguments=arguments)
-        gate = TOOLS.open(tool_call.id, tool_call.function.name, asyncio.get_running_loop())
+        gate = TOOLS.open(
+            tool_call.id,
+            tool_call.function.name,
+            asyncio.get_running_loop(),
+            session_id=self._session_id(),
+        )
         await self._publish(
             {
                 "type": "tool_running",

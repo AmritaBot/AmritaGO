@@ -5,13 +5,12 @@ Run with ``uv run --no-sync python scripts/check_trace.py``.
 
 from __future__ import annotations
 
-import asyncio
 import os
 import tempfile
 
 os.environ.setdefault("AMRITA_GO_DATA", tempfile.mkdtemp(prefix="amrita-trace-"))
 
-from app.runtime.sessions import (  # noqa: E402
+from app.runtime.sessions import (
     HistoryEntry,
     trace_event,
     trace_reasoning,

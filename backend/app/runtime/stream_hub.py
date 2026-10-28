@@ -30,18 +30,58 @@ class StreamChannel:
         self.error: str | None = None
         # Cut off at the gate: nothing follows, no summary and no last model call.
         self.aborted = False
+        # The strategy checks this at each round boundary to end gracefully without cancellation.
+        self.stop_requested = False
+        self.stop_mode: str | None = None
         self._buf = StringIO()
         self._lock = asyncio.Lock()
         self._version = 0
         self._changed = asyncio.Event()
         # Set by whoever started the run, so the socket can cancel it.
         self.task: asyncio.Task[None] | None = None
+        # The active turn to cancel immediately, leaving any queued prompt for its own turn.
+        self.turn_task: asyncio.Task[None] | None = None
+        # This turn's suspend stream, used to arm graceful stops on the correct run.
+        self.stream: Any | None = None
+        # ``InjectSpec`` of the workflow this turn runs.
+        self.inject: Any | None = None
+        # Summary of the last finished turn, republished as ``done`` by the driver.
+        self.turn_summary: dict[str, Any] | None = None
+        # Next channel in the chain; the forwarder follows it when this one ends.
+        self.successor: StreamChannel | None = None
+
+    @property
+    def finished(self) -> bool:
+        """Whether this channel can no longer accept a stop."""
+        return self.done or self.cancelled
 
     def cancel(self) -> None:
         """Ask the run to stop. Safe to call repeatedly or after completion."""
         self.cancelled = True
         if self.task is not None and not self.task.done():
             self.task.cancel()
+
+    def cancel_turn(self) -> None:
+        """Stop the turn that is running right now, keeping the chain alive.
+
+        Falls back to the chain task while no turn has started yet, so a stop
+        that arrives during setup is not silently ignored.
+        """
+        turn = self.turn_task
+        if turn is not None and not turn.done():
+            turn.cancel()
+            return
+        if self.task is not None and not self.task.done():
+            self.task.cancel()
+
+    def notify(self) -> None:
+        """Wake a forwarder without appending an event.
+
+        Used when a successor channel is linked in: the reader parked on this
+        channel has nothing new to send, but it does need to look again.
+        """
+        self._version += 1
+        self._changed.set()
 
     async def publish(self, event: dict[str, Any]) -> None:
         """Append one event. Never raises, never blocks on a consumer."""

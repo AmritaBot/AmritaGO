@@ -634,6 +634,11 @@ export function ChatView({
     resolveLimit,
     runningTools,
     cancelTool,
+    injectCapability,
+    pendingPrompt,
+    stopping,
+    offerPrompt,
+    revokePrompt,
   } = useChatSocketFor(sessionId);
   const [permission, setPermission] = useState<Permission>("workspace");
   // The tool call the user asked to cancel; the dialog collects the reason.
@@ -853,18 +858,29 @@ export function ChatView({
 
   /** One send path for the composer and the starters, so both behave alike. */
   const submit = (text: string) => {
-    const sent = send(
-      text,
-      pending.map((item) => ({
-        id: item.id,
-        kind: item.kind,
-        name: item.name,
-        url: item.url ?? null,
-        path: item.path ?? null,
-      })),
-      activeModel,
-      effectivePermission,
-    );
+    const files = pending.map((item) => ({
+      id: item.id,
+      kind: item.kind,
+      name: item.name,
+      url: item.url ?? null,
+      path: item.path ?? null,
+    }));
+    if (busy) {
+      // Queue for the next turn and stop the current one; a second press escalates the stop.
+      const queued = offerPrompt(
+        text,
+        files,
+        stopping ? "immediate" : "graceful",
+      );
+      if (!queued) {
+        toast.error("连接已断开，无法排队；请等本轮结束后再发送");
+        return false;
+      }
+      stickToBottom.current = true;
+      setPending([]);
+      return true;
+    }
+    const sent = send(text, files, activeModel, effectivePermission);
     if (sent) {
       stickToBottom.current = true;
       setPending([]);
@@ -938,6 +954,9 @@ export function ChatView({
         <TodoPanel todos={todos} onClear={clearTodos} />
         <Composer
           busy={busy}
+          stopping={stopping}
+          pendingPrompt={pendingPrompt}
+          inject={injectCapability}
           workspaces={workspaces}
           activeWorkspace={activeWorkspace}
           agents={agents}
@@ -950,6 +969,7 @@ export function ChatView({
           guard={guard}
           onSend={submit}
           onStop={stop}
+          onRevoke={revokePrompt}
           onAttach={(files) => {
             void attach(files);
           }}

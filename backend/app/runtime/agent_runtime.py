@@ -10,8 +10,11 @@ Event ``type`` values: ``start``, ``delta``, ``reasoning``, ``meta``,
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import AsyncGenerator
+from contextlib import suppress
+from dataclasses import dataclass, field
 from typing import Any
 
 from amrita_core import ChatObject
@@ -25,7 +28,7 @@ from amrita_core.contexts import AbilityContext, DatabackendOptions
 from amrita_core.preset import MultiPresetManager
 from amrita_core.tools.manager import MultiToolsManager
 from amrita_core.tools.mcp import MultiClientManager
-from amrita_core.types import MemoryModel, ModelPreset
+from amrita_core.types import MemoryModel, Message, ModelPreset
 from amrita_core.types.preset import resolve_max_context
 from amrita_sense.logging import logger
 
@@ -52,8 +55,90 @@ from app.runtime.sessions import (
     trace_reasoning,
 )
 from app.runtime.stream_hub import StreamChannel
-from app.runtime.tool_limit import for_run
+from app.runtime.tool_limit import STOP_NOTICE, for_run
 from app.runtime.workflows import DEFAULT_WORKFLOW, WORKFLOWS
+
+
+@dataclass
+class TurnDraft:
+    """What one turn has produced so far.
+
+    Kept outside the generator on purpose. A cancelled turn closes the
+    generator, and everything accumulated in its local variables would close
+    with it — which is exactly the content a stopped turn must still keep.
+    """
+
+    session_id: str
+    agent_name: str = ""
+    workflow: str = ""
+    trace: list[dict[str, Any]] = field(default_factory=list)
+    answer: list[str] = field(default_factory=list)
+    error: str | None = None
+    steps: int = 0
+    tool_calls: int = 0
+    # A call is announced twice (start and finish), so count ids, not events.
+    counted_tools: set[str] = field(default_factory=set)
+    first_delta_at: float | None = None
+    last_delta_at: float | None = None
+    # The assistant entry is already in ``history.jsonl``.
+    history_written: bool = False
+    # The run reached its normal end, ``COMMIT_MEMORY`` included.
+    committed: bool = False
+    # Ended by a user stop rather than by the model finishing.
+    stopped: bool = False
+
+    @property
+    def answer_text(self) -> str:
+        return "".join(self.answer)
+
+
+def _text_of(content: Any) -> str:
+    """Flatten a message content that may be a string or a list of parts."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for part in content:
+            text = getattr(part, "text", None)
+            if text is None and isinstance(part, dict):
+                text = part.get("text")
+            if text is not None:
+                parts.append(str(text))
+        return "".join(parts)
+    return str(content)
+
+
+async def _commit_interrupted(
+    draft: TurnDraft,
+    user_input: str,
+    attachments: list[dict[str, Any]] | None,
+) -> None:
+    """Write a stopped turn into the context file.
+
+    ``COMMIT_MEMORY`` never runs for a cancelled turn, so the next turn would
+    start without the message that was just sent — and, worse, without the
+    answer that was already streamed to the user. The transcript and the
+    context have to agree, so both are written here.
+
+    The check is on content, not on a flag: a turn can be cancelled *after* the
+    workflow committed, and appending again would duplicate it.
+    """
+    memory = await load_context(draft.session_id)
+    messages = memory.messages
+    answer = draft.answer_text
+    last = messages[-1] if messages else None
+    if last is not None and last.role == "assistant" and _text_of(last.content) == answer:
+        return
+    if last is not None and last.role == "user" and _text_of(last.content) == user_input:
+        if answer:
+            messages.append(Message(role="assistant", content=answer))
+    else:
+        messages.append(
+            Message(role="user", content=build_user_content(user_input, attachments or []))
+        )
+        if answer:
+            messages.append(Message(role="assistant", content=answer))
+    await save_context(draft.session_id, memory)
 
 
 class SessionMemoryBackend(MemoryBackend):
@@ -249,6 +334,8 @@ async def _iter_events(
     agent: AgentPreset | None = None,
     attachments: list[dict[str, Any]] | None = None,
     requested_access: str | None = None,
+    draft: TurnDraft | None = None,
+    channel: StreamChannel | None = None,
 ) -> AsyncGenerator[dict[str, Any], None]:
     fallback_watch.start_turn()
 
@@ -259,6 +346,9 @@ async def _iter_events(
         (agent.workflow if agent else None) or settings.active_workflow or DEFAULT_WORKFLOW
     )
     agent_name = agent.name if agent else "standard"
+    draft = draft or TurnDraft(session_id=session_id)
+    draft.workflow = workflow.name
+    draft.agent_name = agent_name
     billing = SessionBillingBackend(session_id)
     started_at = time.time()
     content = build_user_content(user_input, attachments or [])
@@ -298,6 +388,11 @@ async def _iter_events(
         backend_options=DatabackendOptions(skip_mcp_fetch=False, skip_tools_fetch=False),
     )
 
+    if channel is not None:
+        # Publish before the first event so startup-racing stops can find the stream and suspend points.
+        channel.stream = chat.io_stream
+        channel.inject = workflow.inject
+
     yield {
         "type": "start",
         "session_id": session_id,
@@ -311,6 +406,7 @@ async def _iter_events(
         "tools": catalog.tool_count(),
         "access": catalog.access_mode,
         "access_label": ACCESS_LABELS.get(catalog.access_mode, catalog.access_mode),
+        "inject": workflow.inject.to_public(),
     }
 
     if fold_plan is not None:
@@ -328,15 +424,8 @@ async def _iter_events(
             },
         }
 
-    history_events: list[dict[str, Any]] = []
-    answer_parts: list[str] = []
-    error_text: str | None = None
-    steps = 0
-    tool_calls = 0
-    # A call is announced twice (start and finish), so count ids, not events.
-    counted_tools: set[str] = set()
-    first_delta_at: float | None = None
-    last_delta_at: float | None = None
+    # Keep state on the draft because cancellation closes this generator and discards its locals.
+    trace = draft.trace
     last_rounds = 0
 
     def announce_compaction() -> dict[str, Any]:
@@ -352,7 +441,7 @@ async def _iter_events(
             chat._di_memory.memory,
             preview.abstract if preview is not None else "",
         )
-        trace_event(history_events, notice["content"], notice["metadata"])
+        trace_event(trace, notice["content"], notice["metadata"])
         return notice
 
     async with chat.begin():
@@ -362,23 +451,22 @@ async def _iter_events(
                 metadata = payload["metadata"]
                 if _is_reasoning(metadata):
                     # Reasoning is always streamed and persisted; the UI decides how loud it is.
-                    trace_reasoning(history_events, payload["content"])
+                    trace_reasoning(trace, payload["content"])
                     yield {"type": "reasoning", "text": payload["content"]}
                     continue
                 if metadata.get("type") == "error":
                     # Keep the failure so the bubble still explains itself after a reload.
-                    error_text = str(metadata.get("error") or payload["content"])
+                    draft.error = str(metadata.get("error") or payload["content"])
                 if _is_step(metadata):
-                    steps += 1
+                    draft.steps += 1
                 if _is_tool_call(metadata):
                     # Deduplicate call events by tool_id.
                     tool_id = str(metadata.get("tool_id") or "")
-                    if tool_id and tool_id not in counted_tools:
-                        counted_tools.add(tool_id)
-                        tool_calls += 1
-                # Steps are appended in arrival order: a reasoning step is
-                # reopened only when a tool call came between them.
-                trace_event(history_events, payload["content"], metadata)
+                    if tool_id and tool_id not in draft.counted_tools:
+                        draft.counted_tools.add(tool_id)
+                        draft.tool_calls += 1
+                # Preserve arrival order and reopen reasoning only after an intervening tool call.
+                trace_event(trace, payload["content"], metadata)
                 yield {"type": "meta", **payload}
                 rounds = len(billing.records)
                 if rounds != last_rounds:
@@ -400,9 +488,9 @@ async def _iter_events(
             if not text:
                 continue
             now = time.time()
-            first_delta_at = first_delta_at or now
-            last_delta_at = now
-            answer_parts.append(text)
+            draft.first_delta_at = draft.first_delta_at or now
+            draft.last_delta_at = now
+            draft.answer.append(text)
             yield {"type": "delta", "text": text}
 
     if fold_plan is not None and not compaction_reported:
@@ -411,48 +499,50 @@ async def _iter_events(
         yield announce_compaction()
 
     finished_at = time.time()
-    answer = "".join(answer_parts)
+    answer = draft.answer_text
 
-    if _is_fallback_only(error_text):
+    if _is_fallback_only(draft.error):
         # Only the wrapper was streamed; the cause came from the PRESET_FALLBACK matcher.
         cause = fallback_watch.describe()
         if cause:
-            error_text = f"{error_text}\n起因：{cause}"
+            draft.error = f"{draft.error}\n起因：{cause}"
 
     usage = summarize(
         billing.records,
         started_at=started_at,
         finished_at=finished_at,
-        first_delta_at=first_delta_at,
-        last_delta_at=last_delta_at,
+        first_delta_at=draft.first_delta_at,
+        last_delta_at=draft.last_delta_at,
         fallback_usage=chat._di_resp.extra_usage,
         context_messages=len(chat._di_memory.memory.messages) if chat._di_memory.memory else None,
         max_context=resolve_max_context(preset, get_config()),
         rounds=max(1, len(billing.records)),
-        steps=steps,
-        tool_calls=tool_calls,
+        steps=draft.steps,
+        tool_calls=draft.tool_calls,
         workflow=workflow.name,
         agent=agent_name,
         preset=preset.name,
         model=preset.model,
-        error=error_text,
+        error=draft.error,
     )
 
-    if answer or error_text:
+    # Treat trace as content so a stopped turn's notice remains in the transcript.
+    if answer or draft.error or trace:
         await append_history(
             session_id,
             HistoryEntry(
                 role="assistant",
                 content=answer,
-                trace=history_events,
-                error=error_text,
+                trace=trace,
+                error=draft.error,
                 usage=usage,
-                steps=steps,
-                tool_calls=tool_calls,
+                steps=draft.steps,
+                tool_calls=draft.tool_calls,
                 workflow=workflow.name,
                 agent=agent_name,
             ),
         )
+        draft.history_written = True
 
     totals, meta = await record_turn_usage(session_id, usage)
     if meta is not None:
@@ -462,14 +552,19 @@ async def _iter_events(
         meta.agent = agent_name
         await save_meta(meta)
 
+    draft.committed = True
+    # Graceful stops do not cancel the turn; the strategy's round-boundary flag records them.
+    if channel is not None and channel.stop_requested:
+        draft.stopped = True
     yield {
-        "type": "done",
+        "type": "turn_end",
         "usage": usage.to_public(),
         "totals": totals.to_public(),
         "title": meta.title if meta else None,
         "message_count": meta.message_count if meta else None,
         "workflow": workflow.name,
         "agent": agent_name,
+        "stopped": draft.stopped,
     }
 
 
@@ -531,17 +626,69 @@ async def _run_command(
             ),
         )
     await bump_session(session_id)
-    await channel.publish(
-        {
-            "type": "done",
-            "usage": None,
-            "totals": None,
-            "title": None,
-            "message_count": None,
-            "workflow": "command",
-            "agent": spec.name,
-        }
-    )
+    summary = {
+        "type": "turn_end",
+        "usage": None,
+        "totals": None,
+        "title": None,
+        "message_count": None,
+        "workflow": "command",
+        "agent": spec.name,
+        "stopped": False,
+    }
+    channel.turn_summary = summary
+    await channel.publish(summary)
+
+
+async def _finalize_stopped(
+    channel: StreamChannel,
+    draft: TurnDraft,
+    user_input: str,
+    attachments: list[dict[str, Any]] | None,
+) -> None:
+    """Write a cut-off turn to disk, then close its turn.
+
+    Nothing here may propagate: the caller is on its way out because of a
+    cancellation, and a failure while saving must not replace the stop with a
+    different error.
+    """
+    try:
+        if not draft.answer_text:
+            # Add a notice if an immediate stop arrives before the model answers.
+            draft.answer.append(STOP_NOTICE)
+        if not draft.committed:
+            await _commit_interrupted(draft, user_input, attachments)
+        if not draft.history_written and (draft.answer_text or draft.error or draft.trace):
+            await append_history(
+                draft.session_id,
+                HistoryEntry(
+                    role="assistant",
+                    content=draft.answer_text,
+                    trace=draft.trace,
+                    error=draft.error,
+                    steps=draft.steps,
+                    tool_calls=draft.tool_calls,
+                    workflow=draft.workflow,
+                    agent=draft.agent_name,
+                ),
+            )
+            draft.history_written = True
+    except Exception as exc:  # pragma: no cover - best effort on the way out
+        logger.opt(exception=exc).error("Failed to save a stopped turn")
+
+    summary = {
+        "type": "turn_end",
+        "usage": None,
+        "totals": None,
+        "title": None,
+        "message_count": None,
+        "workflow": draft.workflow,
+        "agent": draft.agent_name,
+        "stopped": True,
+    }
+    channel.turn_summary = summary
+    with suppress(asyncio.CancelledError, Exception):
+        await channel.publish(summary)
 
 
 async def run_turn(
@@ -581,7 +728,7 @@ async def run_turn(
     if preset is None:
         # Defensive: the socket resolves a preset before starting a real turn.
         await channel.publish({"type": "error", "message": "这一轮没有可用的模型"})
-        await channel.publish({"type": "done", "usage": None, "totals": None})
+        await channel.publish({"type": "turn_end", "usage": None, "totals": None, "stopped": False})
         return
 
     await events.emit(
@@ -598,6 +745,7 @@ async def run_turn(
             attachments=list(attachments or []),
         ),
     )
+    draft = TurnDraft(session_id=session_id, agent_name=agent.name if agent else "standard")
     error: str | None = None
     try:
         async for event in _iter_events(
@@ -608,10 +756,19 @@ async def run_turn(
             agent=agent,
             attachments=attachments,
             requested_access=requested_access,
+            draft=draft,
+            channel=channel,
         ):
             if event["type"] == "error":
                 error = str(event.get("message"))
+            if event["type"] == "turn_end":
+                channel.turn_summary = event
             await channel.publish(event)
+    except asyncio.CancelledError:
+        # The draft preserves partial output after an immediate stop closes the generator.
+        draft.stopped = True
+        await _finalize_stopped(channel, draft, user_input, attachments)
+        raise
     except Exception as exc:
         logger.opt(exception=exc).error("Agent run failed")
         error = _error_text(exc)
@@ -627,6 +784,7 @@ async def run_turn(
             await save_meta(meta)
         await channel.publish({"type": "error", "message": error})
     finally:
+        channel.stream = None
         await events.emit(
             events.RUN_END,
             session_id=session_id,
@@ -635,6 +793,7 @@ async def run_turn(
                 (agent.workflow if agent else None) or settings.active_workflow or DEFAULT_WORKFLOW
             ),
             error=error,
+            stopped=draft.stopped,
         )
 
 

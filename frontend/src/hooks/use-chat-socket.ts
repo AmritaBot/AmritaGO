@@ -21,7 +21,10 @@ import { toast } from "sonner";
 import {
   api,
   type ConfirmRequest,
+  type InjectCapability,
+  type QueuedPromptHandle,
   type RunningTool,
+  type StopMode,
   type StreamEvent,
   type TodoList,
   type ToolLimitRequest,
@@ -144,6 +147,15 @@ export function useChatSocket(sessionId: string | null) {
   const [todos, setTodos] = useState<TodoList | null>(null);
   // Count messages carried into the next request.
   const [contextMessages, setContextMessages] = useState<number | null>(null);
+  // What the running workflow can do about a message sent mid-run.
+  const [injectCapability, setInjectCapability] =
+    useState<InjectCapability | null>(null);
+  // The message waiting to become the next turn. At most one, by design.
+  const [pendingPrompt, setPendingPrompt] = useState<QueuedPromptHandle | null>(
+    null,
+  );
+  // A stop has been requested and the turn has not ended yet.
+  const [stopping, setStopping] = useState(false);
   const startedAtRef = useRef<number | null>(null);
   const firstDeltaRef = useRef<number | null>(null);
   // Accumulate reasoning intervals because reasoning and answers interleave.
@@ -163,6 +175,9 @@ export function useChatSocket(sessionId: string | null) {
   const retryRef = useRef<number | null>(null);
   // Mirror messages so callbacks can read the latest value.
   const messagesRef = useRef<ChatMessage[]>([]);
+  // Track a stop waiting for its suspend point so a second press can escalate it.
+  const stoppingRef = useRef(false);
+  const pendingIdRef = useRef<string | null>(null);
 
   sessionRef.current = sessionId;
   messagesRef.current = messages;
@@ -262,14 +277,15 @@ export function useChatSocket(sessionId: string | null) {
   }, []);
 
   const finalizeAssistant = useCallback(
-    (patch?: Partial<ChatMessage>) => {
+    (patch?: Partial<ChatMessage>, options?: { keepBusy?: boolean }) => {
       flush();
       settleThinking();
       const total = thinkTotalRef.current;
       thinkTotalRef.current = 0;
       const id = activeIdRef.current;
       activeIdRef.current = null;
-      setBusy(false);
+      // A chained turn keeps the run alive: ``busy`` only ends with ``done``.
+      if (!options?.keepBusy) setBusy(false);
       if (!id) return;
       setMessages((prev) =>
         prev.map((message) =>
@@ -350,6 +366,12 @@ export function useChatSocket(sessionId: string | null) {
           });
           if (!id) ensureAssistant();
           setBusy(true);
+          // The server took the queued message to start this turn.
+          setPendingPrompt(null);
+          pendingIdRef.current = null;
+          stoppingRef.current = false;
+          setStopping(false);
+          setInjectCapability(event.inject ?? null);
           break;
         }
         case "delta": {
@@ -460,6 +482,57 @@ export function useChatSocket(sessionId: string | null) {
           });
           break;
         }
+        case "turn_end": {
+          // Keep busy when a queued message continues the run; the next start opens a new bubble.
+          finalizeAssistant(
+            { usage: event.usage ?? null, live: null },
+            { keepBusy: true },
+          );
+          setLiveUsage(null);
+          setRunningTools({});
+          setLimitRequest(null);
+          setPendingConfirms([]);
+          if (event.usage?.context_messages != null) {
+            setContextMessages(event.usage.context_messages);
+          }
+          if (event.usage) setLastUsage(event.usage);
+          if (event.totals) {
+            setTotals(event.totals);
+            window.dispatchEvent(
+              new CustomEvent("amrita:usage", {
+                detail: { sessionId: sessionRef.current, totals: event.totals },
+              }),
+            );
+          }
+          if (event.title) {
+            window.dispatchEvent(
+              new CustomEvent("amrita:session-title", {
+                detail: { sessionId: sessionRef.current, title: event.title },
+              }),
+            );
+          }
+          break;
+        }
+        case "queued": {
+          setPendingPrompt(event.handle);
+          pendingIdRef.current = event.handle.id;
+          break;
+        }
+        case "unqueued": {
+          // Keep the text visible when too_late means the message already started.
+          if (pendingIdRef.current === event.handle_id) {
+            setPendingPrompt(null);
+            pendingIdRef.current = null;
+          }
+          break;
+        }
+        case "stop_ack": {
+          if (!event.accepted) {
+            stoppingRef.current = false;
+            setStopping(false);
+          }
+          break;
+        }
         case "error": {
           flush();
           // Show errors that arrive before any assistant delta.
@@ -481,6 +554,11 @@ export function useChatSocket(sessionId: string | null) {
           finalizeAssistant({ usage: event.usage ?? null, live: null });
           setLiveUsage(null);
           setRunningTools({});
+          setPendingPrompt(null);
+          pendingIdRef.current = null;
+          stoppingRef.current = false;
+          setStopping(false);
+          setInjectCapability(null);
           if (event.usage?.context_messages != null) {
             setContextMessages(event.usage.context_messages);
           }
@@ -599,6 +677,11 @@ export function useChatSocket(sessionId: string | null) {
       setLiveUsage(null);
       setPendingConfirms([]);
       setRunningTools({});
+      setPendingPrompt(null);
+      pendingIdRef.current = null;
+      stoppingRef.current = false;
+      setStopping(false);
+      setInjectCapability(null);
       if (isMockMode()) {
         // Clear persisted history in mock mode because mock turns are not saved.
         setMessages([]);
@@ -628,8 +711,7 @@ export function useChatSocket(sessionId: string | null) {
                 id: entry.id,
                 role: entry.role as "user" | "assistant",
                 content: entry.content,
-                // ``trace`` is the stored timeline. The split fields below are
-                // derived, because a few UI checks read them by name.
+                // Derive these split fields from the stored trace for UI checks.
                 reasoning: steps
                   .flatMap((step) =>
                     step.kind === "reasoning" ? [step.text] : [],
@@ -784,16 +866,80 @@ export function useChatSocket(sessionId: string | null) {
     [busy, clearMock, connect, handleEvent, sessionId],
   );
 
-  const stop = useCallback(() => {
-    clearMock();
+  const stop = useCallback(
+    (mode: StopMode = "graceful") => {
+      clearMock();
+      const socket = socketRef.current;
+      if (socket && socket.readyState === WebSocket.OPEN && sessionId) {
+        // Wait for turn_end or done because only the server knows what it kept.
+        stoppingRef.current = true;
+        setStopping(true);
+        socket.send(
+          JSON.stringify({ type: "stop", session_id: sessionId, mode }),
+        );
+        return;
+      }
+      finalizeAssistant();
+      streamIdRef.current = null;
+      setRunningTools({});
+    },
+    [clearMock, finalizeAssistant, sessionId],
+  );
+
+  /**
+   * Queue a message for the next turn and end this one.
+   *
+   * Sent as one frame so the server can keep the two halves atomic: offering
+   * first, then stopping. A stop that succeeded while the offer failed would
+   * leave the user with no run and no message.
+   */
+  const offerPrompt = useCallback(
+    (
+      text: string,
+      attachments: ChatMessage["attachments"] = [],
+      mode: StopMode = "graceful",
+    ) => {
+      const socket = socketRef.current;
+      const body = text.trim();
+      if (!sessionId || (!body && attachments.length === 0)) return false;
+      if (isMockMode() || !socket || socket.readyState !== WebSocket.OPEN) {
+        return false;
+      }
+      stoppingRef.current = true;
+      setStopping(true);
+      socket.send(
+        JSON.stringify({
+          type: "prompt_offer",
+          session_id: sessionId,
+          message: body,
+          attachments,
+          mode,
+          stop: true,
+        }),
+      );
+      return true;
+    },
+    [sessionId],
+  );
+
+  /** Withdraw a queued message that has not started yet. */
+  const revokePrompt = useCallback(() => {
     const socket = socketRef.current;
-    if (socket && socket.readyState === WebSocket.OPEN && sessionId) {
-      socket.send(JSON.stringify({ type: "stop", session_id: sessionId }));
+    const handle = pendingIdRef.current;
+    if (!sessionId || !handle) return;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      setPendingPrompt(null);
+      pendingIdRef.current = null;
+      return;
     }
-    finalizeAssistant();
-    streamIdRef.current = null;
-    setRunningTools({});
-  }, [clearMock, finalizeAssistant, sessionId]);
+    socket.send(
+      JSON.stringify({
+        type: "prompt_revoke",
+        session_id: sessionId,
+        handle_id: handle,
+      }),
+    );
+  }, [sessionId]);
 
   /**
    * Re-run the prompt behind a failed turn.
@@ -1015,8 +1161,13 @@ export function useChatSocket(sessionId: string | null) {
       contextMessages,
       pendingConfirms,
       todos,
+      injectCapability,
+      pendingPrompt,
+      stopping,
       send,
       stop,
+      offerPrompt,
+      revokePrompt,
       retry,
       editPrompt,
       limitRequest,
@@ -1039,8 +1190,13 @@ export function useChatSocket(sessionId: string | null) {
       contextMessages,
       pendingConfirms,
       todos,
+      injectCapability,
+      pendingPrompt,
+      stopping,
       send,
       stop,
+      offerPrompt,
+      revokePrompt,
       retry,
       editPrompt,
       limitRequest,

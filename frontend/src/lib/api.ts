@@ -263,6 +263,33 @@ export interface AgentDetail extends AgentPreset {
  *  a decomposition pass and step lifecycle events. */
 export type WorkflowMode = "chat" | "react" | "step";
 
+/** How a running turn may be ended. */
+export type StopMode = "graceful" | "immediate";
+
+/**
+ * What a workflow can do about a message sent while it is running.
+ *
+ * `graceful` means the workflow declares a suspend point, so the turn can stop
+ * between two rounds; without one only `immediate` is possible, which cuts
+ * whatever is in flight.
+ */
+export interface InjectCapability {
+  immediate: boolean;
+  graceful: boolean;
+  /** Node tags the graceful stop may park on. */
+  points: string[];
+  /** Human wording for where it stops, e.g. 「当前步骤结束后」. */
+  boundary: string;
+}
+
+/** A message queued for the next turn, and the handle that can revoke it. */
+export interface QueuedPromptHandle {
+  id: string;
+  content: string;
+  attachments: Attachment[];
+  created_at: number;
+}
+
 export interface WorkflowSpec {
   name: string;
   title: string;
@@ -272,6 +299,7 @@ export interface WorkflowSpec {
   mode_label: string;
   hint: string;
   supports_steps: boolean;
+  inject?: InjectCapability;
 }
 
 export interface WorkflowListing {
@@ -568,6 +596,7 @@ export type StreamEvent =
       preset: string;
       model: string;
       tools: number;
+      inject?: InjectCapability;
     }
   | { type: "delta"; text: string }
   | { type: "reasoning"; text: string }
@@ -589,6 +618,35 @@ export type StreamEvent =
       };
     }
   | { type: "error"; message: string }
+  // A turn is persisted, but the stream stays open when a queued message follows.
+  | {
+      type: "turn_end";
+      usage: TurnUsage | null;
+      totals: UsageTotals | null;
+      title?: string | null;
+      message_count?: number | null;
+      workflow?: string;
+      agent?: string;
+      stopped?: boolean;
+    }
+  | {
+      type: "queued";
+      handle: QueuedPromptHandle;
+      replaced: QueuedPromptHandle | null;
+    }
+  | {
+      type: "unqueued";
+      handle_id: string;
+      status: "revoked" | "too_late" | "not_found";
+    }
+  | {
+      type: "stop_ack";
+      accepted: boolean;
+      mode: StopMode;
+      parked: boolean;
+      reason: string;
+      latency: number;
+    }
   | {
       type: "done";
       usage: TurnUsage | null;
@@ -597,6 +655,7 @@ export type StreamEvent =
       message_count?: number | null;
       workflow?: string;
       agent?: string;
+      stopped?: boolean;
     }
   | { type: "pong" };
 

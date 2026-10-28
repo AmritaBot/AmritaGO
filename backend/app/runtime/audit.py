@@ -173,6 +173,28 @@ class AuditBroker:
             count += 1
         return count
 
+    def reject_session(self, session_id: str, reason: str) -> int:
+        """Deny only *this* conversation's outstanding confirmations.
+
+        ``reject_all`` would also answer a question parked by another session,
+        silently cancelling work the user never asked to stop. Sessions run
+        concurrently, so a stop has to be scoped to the one that asked for it.
+        """
+        count = 0
+        for request_id, pending in list(self._pending.items()):
+            if pending.session_id != session_id or pending.future.done():
+                continue
+            pending.future.set_result(
+                Decision(
+                    approved=False,
+                    command=pending.command,
+                    reason=reason,
+                    request_id=request_id,
+                )
+            )
+            count += 1
+        return count
+
 
 BROKER = AuditBroker()
 

@@ -26,6 +26,8 @@ import {
   FolderIcon,
   FolderPlusIcon,
   ImageIcon,
+  InfoIcon,
+  LoaderCircleIcon,
   LockIcon,
   PlusIcon,
   ShieldCheckIcon,
@@ -38,7 +40,12 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
-import type { AccessMode, ModelOption } from "@/lib/api";
+import type {
+  AccessMode,
+  InjectCapability,
+  ModelOption,
+  StopMode,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export type Permission = AccessMode;
@@ -141,6 +148,9 @@ const THINKING_EFFORTS = [
 
 export function Composer({
   busy,
+  stopping,
+  pendingPrompt,
+  inject,
   workspaces,
   activeWorkspace,
   agents,
@@ -153,6 +163,7 @@ export function Composer({
   guard,
   onSend,
   onStop,
+  onRevoke,
   onAttach,
   onRemoveAttachment,
   onSelectWorkspace,
@@ -165,6 +176,12 @@ export function Composer({
   commands: serverCommands,
 }: {
   busy: boolean;
+  /** A stop was requested and the turn has not ended yet. */
+  stopping?: boolean;
+  /** The message waiting to become the next turn. */
+  pendingPrompt?: { content: string } | null;
+  /** What the running workflow can do about a mid-run message. */
+  inject?: InjectCapability | null;
   workspaces: WorkspaceOption[];
   activeWorkspace: string | null;
   agents: AgentOption[];
@@ -177,7 +194,8 @@ export function Composer({
   attachments: PendingAttachment[];
   guard: GuardState;
   onSend: (text: string) => void;
-  onStop: () => void;
+  onStop: (mode: StopMode) => void;
+  onRevoke: () => void;
   onAttach: (files: File[]) => void;
   onRemoveAttachment: (id: string) => void;
   onSelectWorkspace: (path: string) => void;
@@ -275,8 +293,22 @@ export function Composer({
     (filteredCommands.length > 0 ||
       (!guard.blocked && (draft.trim().length > 0 || attachments.length > 0)));
 
+  // While busy, the primary button queues this draft for the next turn.
+  const hasInput = draft.trim().length > 0 || attachments.length > 0;
+  const offerMode: StopMode = stopping ? "immediate" : "graceful";
+
   const submit = () => {
-    if (busy) return;
+    if (busy) {
+      // The parent routes this to the queue; it knows the workflow capability.
+      if (slashQuery !== null && filteredCommands.length > 0) {
+        runCommand(filteredCommands[commandIndex]);
+        return;
+      }
+      if (!hasInput) return;
+      onSend(draft);
+      setDraft("");
+      return;
+    }
     // Handle slash commands before model guards so /help works without a model.
     if (slashQuery !== null && filteredCommands.length > 0) {
       runCommand(filteredCommands[commandIndex]);
@@ -483,6 +515,27 @@ export function Composer({
           </div>
         )}
 
+        {pendingPrompt && (
+          <div className="flex items-center gap-1.5 border-b border-border px-3 py-2">
+            <ArrowUpIcon className="size-3 shrink-0 text-muted-foreground" />
+            <span
+              className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"
+              title={pendingPrompt.content}
+            >
+              下一轮：{pendingPrompt.content}
+            </span>
+            <button
+              type="button"
+              onClick={onRevoke}
+              className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent"
+              aria-label="撤销这条待发送消息"
+              title="撤销发送"
+            >
+              <XIcon className="size-3" />
+            </button>
+          </div>
+        )}
+
         <textarea
           ref={textareaRef}
           value={draft}
@@ -650,18 +703,58 @@ export function Composer({
             <Button
               size="icon"
               className="size-8 rounded-full max-sm:size-10"
-              onClick={busy ? onStop : submit}
-              disabled={!busy && !canSend}
-              aria-label={busy ? "停止生成" : "发送"}
+              onClick={busy && !hasInput ? () => onStop(offerMode) : submit}
+              disabled={(!busy && !canSend) || (Boolean(stopping) && !hasInput)}
+              aria-label={
+                busy
+                  ? hasInput
+                    ? stopping
+                      ? "立即发送"
+                      : "停止并发送"
+                    : stopping
+                      ? "正在停止"
+                      : "停止生成"
+                  : "发送"
+              }
+              title={
+                busy
+                  ? hasInput
+                    ? stopping
+                      ? "立即结束本轮并发送"
+                      : inject?.graceful
+                        ? `本轮结束后发送（会在「${inject.boundary || "下一个安全点"}」停止）`
+                        : "立即结束本轮并发送"
+                    : "停止本轮"
+                  : "发送"
+              }
             >
               {busy ? (
-                <SquareIcon className="size-3.5" />
+                !hasInput && stopping ? (
+                  <LoaderCircleIcon className="size-3.5 animate-spin" />
+                ) : hasInput ? (
+                  <ArrowUpIcon className="size-4" />
+                ) : (
+                  <SquareIcon className="size-3.5" />
+                )
               ) : (
                 <ArrowUpIcon className="size-4" />
               )}
             </Button>
           </div>
         </div>
+
+        {busy && inject && (
+          <div className="flex items-start gap-2 border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground">
+            <InfoIcon className="mt-0.5 size-3 shrink-0" />
+            <span className="min-w-0 flex-1">
+              {stopping
+                ? "正在等待本轮结束…再次点击可直接结束"
+                : inject.graceful
+                  ? `输入内容可排队到下一轮；停止会等到「${inject.boundary || "下一个安全点"}」`
+                  : "这个工作流没有安全停止点，停止会立即结束本轮"}
+            </span>
+          </div>
+        )}
 
         {guard.blocked && (
           <div className="flex items-start gap-2 border-t border-border px-3 py-1.5 text-[11px] text-amber-700 dark:text-amber-400">

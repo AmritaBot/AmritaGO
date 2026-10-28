@@ -35,6 +35,8 @@ class _Pending:
     budget: int = 0
     extension: int = 0
     created_at: float = field(default_factory=time.time)
+    # Which conversation parked; a stop in one session must not answer another.
+    session_id: str = ""
 
 
 class LimitGate:
@@ -65,7 +67,12 @@ class LimitGate:
         """Publish the question and wait for one of :data:`ACTIONS`."""
         request_id = uuid.uuid4().hex
         loop = asyncio.get_running_loop()
-        pending = _Pending(future=loop.create_future(), budget=budget, extension=extension)
+        pending = _Pending(
+            future=loop.create_future(),
+            budget=budget,
+            extension=extension,
+            session_id=str(getattr(channel, "session_id", "") or ""),
+        )
         self._pending[request_id] = pending
         try:
             await channel.publish(
@@ -103,6 +110,16 @@ class LimitGate:
         count = 0
         for pending in list(self._pending.values()):
             if pending.future.done():
+                continue
+            pending.future.set_result("abort")
+            count += 1
+        return count
+
+    def reject_session(self, session_id: str) -> int:
+        """Answer only this conversation's parked budget questions."""
+        count = 0
+        for pending in list(self._pending.values()):
+            if pending.session_id != session_id or pending.future.done():
                 continue
             pending.future.set_result("abort")
             count += 1

@@ -8,7 +8,7 @@ import os
 import tempfile
 import time
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any, Literal
 
@@ -84,6 +84,13 @@ from app.runtime.audit import BROKER
 from app.runtime.commands import COMMANDS, CommandError, fold_session
 from app.runtime.limit_gate import LIMITS
 from app.runtime.message_edit import MessageEditError, rewrite_unanswered_prompt
+from app.runtime.prompt_inject import (
+    SLOTS,
+    PromptInjectAPI,
+    QueuedPrompt,
+    StopMode,
+    TurnInjector,
+)
 from app.runtime.sessions import (
     archive_session,
     branch_session,
@@ -1333,12 +1340,18 @@ async def _drain(websocket: WebSocket, channel: StreamChannel, offset: int = 0) 
     Sending is best-effort: if the peer vanished mid-chunk we stop forwarding
     but the agent keeps running and the buffer keeps growing, so a reconnect
     loses nothing. This function never raises for a dead peer.
+
+    A turn that chains into a queued prompt publishes its next channel on
+    ``successor``; the reader follows it instead of ending, so one socket sees
+    the whole chain while every turn keeps its own buffer (a shared buffer would
+    replay already-committed turns on reconnect).
     """
     cursor = offset
+    current = channel
     while True:
         # Read the version before waiting, so anything appended wakes us at once.
-        version = channel.version
-        lines, cursor, done = channel.read_from(cursor)
+        version = current.version
+        lines, cursor, done = current.read_from(cursor)
         for line in lines:
             if not _forwardable(line):
                 continue
@@ -1346,13 +1359,48 @@ async def _drain(websocket: WebSocket, channel: StreamChannel, offset: int = 0) 
                 await websocket.send_text(line)
             except (WebSocketDisconnect, RuntimeError, ConnectionError):
                 return cursor
+        successor = current.successor
+        if successor is not None:
+            current = successor
+            cursor = 0
+            continue
         if done:
             return cursor
-        await channel.wait_change(version)
+        await current.wait_change(version)
 
 
 def _frame(payload: dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False)
+
+
+def _stop_mode(payload: dict[str, Any]) -> StopMode:
+    """Read the requested stop mode, defaulting to the graceful one.
+
+    Graceful is the better default: it stops between rounds instead of inside
+    one. Workflows without a suspend point fall back to an immediate stop by
+    themselves, so the caller does not have to know which workflow is running.
+    """
+    raw = str(payload.get("mode") or StopMode.GRACEFUL)
+    try:
+        return StopMode(raw)
+    except ValueError:
+        return StopMode.GRACEFUL
+
+
+async def _ack_stop(websocket: WebSocket, injector: PromptInjectAPI, mode: StopMode) -> None:
+    """Stop a turn and report how it went.
+
+    The reply is sent on the socket rather than buffered in the channel: it
+    describes a request, not the transcript, and replaying it on reconnect would
+    only confuse a fresh client.
+    """
+    try:
+        result = await injector.stop(mode)
+    except Exception as exc:  # pragma: no cover - a stop must never break the socket
+        logger.opt(exception=exc).error("Failed to stop a turn")
+        return
+    with suppress(WebSocketDisconnect, RuntimeError, ConnectionError):
+        await websocket.send_text(_frame({"type": "stop_ack", **result.to_public()}))
 
 
 async def _forward_until_done(
@@ -1378,13 +1426,32 @@ async def chat_socket(websocket: WebSocket) -> None:
           start a turn (returns immediately; events arrive on this socket)
       ``{"type": "resume", "session_id": "...", "stream_id": "..."}``
           replay a buffer from the beginning and continue live
+      ``{"type": "stop", "session_id": "...", "mode": "graceful"|"immediate"}``
+          end the running turn; ``graceful`` waits for a declared suspend point
+          and falls back to ``immediate`` when the workflow has none
+      ``{"type": "prompt_offer", "session_id": "...", "message": "...",
+          "mode": "...", "stop": true}``
+          queue a message for the next turn, replacing any pending one
+      ``{"type": "prompt_revoke", "session_id": "...", "handle_id": "..."}``
+          withdraw a queued message that has not started yet
       ``{"type": "tool_cancel", "tool_id": "...", "reason": "..."}``
           stop one running tool call; the turn continues with the reason
       ``{"type": "ping"}``
+
+    Server -> client extras: ``queued``, ``unqueued``, ``stop_ack``, and
+    ``turn_end`` (one turn finished; the stream stays open if another follows).
+    ``done`` closes the stream, which is why only the driver sends it.
     """
     await websocket.accept()
 
     forward_tasks: set[asyncio.Task[None]] = set()
+    # Run stops and offers in the background so suspend waits do not block pings.
+    bg_tasks: set[asyncio.Task[None]] = set()
+
+    def spawn_background(coro: Any) -> None:
+        task = asyncio.create_task(coro)
+        bg_tasks.add(task)
+        task.add_done_callback(bg_tasks.discard)
 
     def spawn_forward(channel: StreamChannel, offset: int = 0) -> None:
         # One live forwarder only; a newer send supersedes an older replay.
@@ -1399,7 +1466,7 @@ async def chat_socket(websocket: WebSocket) -> None:
     session_id = websocket.query_params.get("session_id")
     if session_id:
         latest = HUB.latest(session_id)
-        if latest is not None and not latest.done:
+        if latest is not None and not latest.finished:
             spawn_forward(latest)
 
     try:
@@ -1432,17 +1499,55 @@ async def chat_socket(websocket: WebSocket) -> None:
 
             if kind == "stop":
                 channel = HUB.latest(target_session)
-                if channel is not None and not channel.done:
-                    # Deny the parked audit, so Stop is immediate.
-                    BROKER.reject_all("用户中止了本轮，确认请求已取消。")
-                    # Same for a parked budget gate: answer it now.
-                    LIMITS.reject_all()
-                    # And release any tool call that is racing a cancel future.
-                    TOOLS.cancel_all("用户中止了本轮")
-                    channel.cancel()
-                    await channel.publish(
-                        {"type": "done", "usage": None, "title": None, "message_count": None}
+                if channel is None or channel.finished:
+                    continue
+                mode = _stop_mode(payload)
+                injector: PromptInjectAPI = TurnInjector(channel)
+                spawn_background(_ack_stop(websocket, injector, mode))
+                continue
+
+            if kind == "prompt_offer":
+                # Queue before stopping so a failed offer cannot leave the user without a message.
+                channel = HUB.latest(target_session)
+                if channel is None or channel.finished:
+                    await websocket.send_text(
+                        _frame(
+                            {
+                                "type": "error",
+                                "message": "这一轮已经结束，直接发送即可",
+                            }
+                        )
                     )
+                    continue
+                text = (payload.get("message") or "").strip()
+                files = tuple(payload.get("attachments") or [])
+                if not text and not files:
+                    await websocket.send_text(_frame({"type": "error", "message": "消息为空"}))
+                    continue
+                injector = TurnInjector(channel)
+                offer = await injector.offer(QueuedPrompt(content=text, attachments=files))
+                await websocket.send_text(_frame({"type": "queued", **offer.to_public()}))
+                if payload.get("stop", True):
+                    spawn_background(_ack_stop(websocket, injector, _stop_mode(payload)))
+                continue
+
+            if kind == "prompt_revoke":
+                channel = HUB.latest(target_session)
+                revoker = TurnInjector(channel) if channel is not None else None
+                status = (
+                    (await revoker.revoke(str(payload.get("handle_id") or ""))).value
+                    if revoker is not None
+                    else "not_found"
+                )
+                await websocket.send_text(
+                    _frame(
+                        {
+                            "type": "unqueued",
+                            "handle_id": str(payload.get("handle_id") or ""),
+                            "status": status,
+                        }
+                    )
+                )
                 continue
 
             if kind == "confirm_response":
@@ -1496,7 +1601,7 @@ async def chat_socket(websocket: WebSocket) -> None:
                 continue
 
             existing = HUB.latest(target_session)
-            if existing is not None and not existing.done:
+            if existing is not None and not existing.finished:
                 await websocket.send_text(
                     _frame(
                         {
@@ -1581,20 +1686,60 @@ async def chat_socket(websocket: WebSocket) -> None:
                 text: str,
                 files: list[dict[str, Any]],
             ) -> None:
-                """Run this turn exactly once.
+                """Run turns until the queue is empty, then close the stream.
 
-                "继续迭代" now appends rounds inside the run, so a finished turn
-                is always finished — there is no successor to chain into.
+                One channel per turn: each keeps its own buffer, so a reconnect
+                replays only the turn that is still running and reads the
+                finished ones from ``history.jsonl``. A shared buffer would
+                replay turns that were already committed.
+
+                ``done`` is published here rather than by the turn, because the
+                stream is not over until there is nothing left to run — and a
+                stopped turn must still close the stream, or the UI stays busy
+                forever.
                 """
-                await _run(
-                    ch,
-                    current,
-                    text,
-                    run_settings,
-                    model,
-                    agent,
-                    files,
-                )
+                current_ch = ch
+                current_text = text
+                current_files = files
+                summary: dict[str, Any] = {}
+                try:
+                    while True:
+                        turn = asyncio.create_task(
+                            _run(
+                                current_ch,
+                                current,
+                                current_text,
+                                run_settings,
+                                model,
+                                agent,
+                                current_files,
+                            )
+                        )
+                        current_ch.turn_task = turn
+                        try:
+                            await asyncio.wait({turn})
+                        except asyncio.CancelledError:
+                            # The chain itself is being killed: take the turn with it.
+                            turn.cancel()
+                            with suppress(asyncio.CancelledError, Exception):
+                                await asyncio.wait({turn})
+                            raise
+                        summary = current_ch.turn_summary or summary
+                        handle = await SLOTS.slot(current).take()
+                        if handle is None:
+                            break
+                        # Link the next turn before this one ends so the socket follows without a gap.
+                        successor = await HUB.create(current)
+                        successor.task = asyncio.current_task()
+                        current_ch.successor = successor
+                        current_ch.notify()
+                        current_ch = successor
+                        current_text = handle.content
+                        current_files = list(handle.attachments)
+                finally:
+                    payload = {key: value for key, value in summary.items() if key != "type"}
+                    with suppress(asyncio.CancelledError, Exception):
+                        await current_ch.publish({"type": "done", **payload})
 
             channel.task = asyncio.create_task(_drive(channel, message, attachments))
             spawn_forward(channel)
@@ -1604,19 +1749,29 @@ async def chat_socket(websocket: WebSocket) -> None:
         for task in list(forward_tasks):
             task.cancel()
         forward_tasks.clear()
+        for task in list(bg_tasks):
+            task.cancel()
+        bg_tasks.clear()
 
 
 @app.get(f"{API}/streams/{{session_id}}")
 async def stream_state(session_id: str) -> dict[str, Any]:
     """Introspection for reconnect logic and debugging."""
+    pending = await SLOTS.slot(session_id).peek()
     channel = HUB.latest(session_id)
     if channel is None:
-        return {"active": False}
+        return {
+            "active": False,
+            "pending": pending.to_public() if pending is not None else None,
+        }
     return {
-        "active": not channel.done,
+        "active": not channel.finished,
         "stream_id": channel.stream_id,
         "bytes": channel.size,
         "error": channel.error,
+        "stopping": channel.stop_mode is not None,
+        "inject": channel.inject.to_public() if channel.inject is not None else None,
+        "pending": pending.to_public() if pending is not None else None,
     }
 
 

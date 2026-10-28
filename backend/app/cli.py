@@ -184,8 +184,7 @@ def _render_markdown(meta: Any, entries: list[Any]) -> str:
         lines += [f"## {roles.get(entry.role, entry.role)} · {_timestamp(entry.created_at)}", ""]
         if entry.content:
             lines += [entry.content.strip(), ""]
-        # Steps render in the order they happened: thinking, tool calls and
-        # notices alternate, and collapsing them into one block would lose that.
+        # Preserve event order because reasoning, tool calls, and notices may alternate.
         for step in entry.trace:
             if step.get("kind") == "reasoning":
                 reasoning = str(step.get("text") or "").strip()

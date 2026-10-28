@@ -37,6 +37,8 @@ class RunningTool:
     started_at: float
     # Resolved with the user's reason when the call is cancelled.
     future: asyncio.Future[str]
+    # Which conversation owns the call; a stop is scoped to it.
+    session_id: str = ""
 
     def public(self) -> dict[str, Any]:
         return {
@@ -60,6 +62,8 @@ class ToolGate:
         tool_id: str,
         tool: str,
         loop: asyncio.AbstractEventLoop,
+        *,
+        session_id: str = "",
     ) -> RunningTool:
         """Register a call that is about to execute."""
         entry = RunningTool(
@@ -67,6 +71,7 @@ class ToolGate:
             tool=tool,
             started_at=time.time(),
             future=loop.create_future(),
+            session_id=session_id,
         )
         self._running[tool_id] = entry
         return entry
@@ -91,6 +96,20 @@ class ToolGate:
         count = 0
         for entry in list(self._running.values()):
             if entry.future.done():
+                continue
+            entry.future.set_result(reason)
+            count += 1
+        return count
+
+    def cancel_session(self, session_id: str, reason: str) -> int:
+        """Stop only the calls belonging to one conversation.
+
+        Two sessions may be running tools at the same time; stopping one must
+        not cancel the other's work.
+        """
+        count = 0
+        for entry in list(self._running.values()):
+            if entry.session_id != session_id or entry.future.done():
                 continue
             entry.future.set_result(reason)
             count += 1
