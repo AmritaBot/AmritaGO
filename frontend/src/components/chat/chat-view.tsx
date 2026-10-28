@@ -198,7 +198,7 @@ function UserMessageBody({ content }: { content: string }) {
             hidden && "max-h-[22rem] overflow-hidden",
           )}
         >
-          <Markdown content={content} maskSecrets />
+          <Markdown content={content} maskSecrets breaks />
         </div>
         {hidden && (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-primary to-transparent" />

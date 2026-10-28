@@ -289,7 +289,18 @@
 }
 
 .md-user pre {
-  @apply border-primary-foreground/20 bg-black/25 text-primary-foreground;
+  @apply border-primary-foreground/20 text-primary-foreground;
+}
+
+/* A fenced block keeps the page palette inside a bubble: the syntax colours are
+   picked for it, and a bubble-tinted surface would bury them. Opaque, because a
+   translucent card would take the bubble's light and soften the contrast. */
+.md-user .code-block {
+  @apply bg-muted text-foreground;
+}
+
+.md-user .code-block pre {
+  @apply bg-transparent text-foreground;
 }
 
 .md-user th,

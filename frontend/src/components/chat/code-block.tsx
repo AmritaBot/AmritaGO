@@ -212,7 +212,7 @@ export function CodeBlock({
   };
 
   return (
-    <div className="group/code relative my-2 overflow-hidden rounded-lg border border-border bg-muted/50">
+    <div className="code-block group/code relative my-2 overflow-hidden rounded-lg border border-border bg-muted/50">
       <div className="flex items-center gap-1.5 border-b border-border/70 bg-muted/40 px-2.5 py-1">
         <span className="font-mono text-[11px] text-muted-foreground">
           {label}

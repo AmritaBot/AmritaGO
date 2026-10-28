@@ -80,7 +80,7 @@ const components: Components = {
   pre({ children }) {
     return <>{children}</>;
   },
-  code({ className, children, ...props }) {
+  code({ node: _node, className, children, ...props }) {
     // Detect fenced code by language class or multiline content.
     const isFenced =
       /language-/.test(className ?? "") || String(children).includes("\n");
@@ -93,7 +93,7 @@ const components: Components = {
       </code>
     );
   },
-  a({ children, ...props }) {
+  a({ node: _node, children, ...props }) {
     return (
       <a target="_blank" rel="noreferrer noopener" {...props}>
         {children}
@@ -137,6 +137,8 @@ const TEXT_TAGS = [
   "strong",
   "em",
   "del",
+  "h5",
+  "h6",
 ] as const;
 
 const maskedComponents: Components = {
@@ -157,7 +159,7 @@ const maskedComponents: Components = {
   pre({ children }) {
     return <>{children}</>;
   },
-  code({ className, children, ...props }) {
+  code({ node: _node, className, children, ...props }) {
     const isFenced =
       /language-/.test(className ?? "") || String(children).includes("\n");
     if (isFenced) {
@@ -169,7 +171,7 @@ const maskedComponents: Components = {
       </code>
     );
   },
-  a({ children, ...props }) {
+  a({ node: _node, children, ...props }) {
     return (
       <a target="_blank" rel="noreferrer noopener" {...props}>
         {maskChildren(children)}
@@ -177,6 +179,44 @@ const maskedComponents: Components = {
     );
   },
 };
+
+/** The parts of an mdast node this file needs. */
+interface MdastNode {
+  type?: string;
+  value?: string;
+  children?: MdastNode[];
+}
+
+/** Replace newlines in text nodes with real line breaks, in place. */
+function splitSoftBreaks(node: MdastNode): void {
+  if (!node.children) return;
+  const next: MdastNode[] = [];
+  for (const child of node.children) {
+    const value = child.type === "text" ? child.value : undefined;
+    if (typeof value === "string" && value.includes("\n")) {
+      value.split("\n").forEach((part, index) => {
+        if (index > 0) next.push({ type: "break" });
+        if (part) next.push({ type: "text", value: part });
+      });
+      continue;
+    }
+    splitSoftBreaks(child);
+    next.push(child);
+  }
+  node.children = next;
+}
+
+/**
+ * Keep the line breaks the author typed.
+ *
+ * Markdown folds a single newline into a space, which is right for prose and
+ * wrong for a chat message: what the user pressed Enter for has to survive.
+ */
+function remarkHardBreaks() {
+  return (tree: unknown) => {
+    splitSoftBreaks(tree as MdastNode);
+  };
+}
 
 /** Close an unterminated fenced block so the parser keeps the tail as code. */
 function closeOpenFence(text: string): string {
@@ -196,12 +236,15 @@ export const Markdown = memo(function Markdown({
   streaming,
   className,
   maskSecrets = false,
+  breaks = false,
 }: {
   content: string;
   streaming?: boolean;
   className?: string;
   /** Mask credential-shaped tokens and reveal them on hover. */
   maskSecrets?: boolean;
+  /** Treat a single newline as a line break instead of a space. */
+  breaks?: boolean;
 }) {
   const prepared = useMemo(() => {
     if (!streaming) return content;
@@ -215,7 +258,11 @@ export const Markdown = memo(function Markdown({
         data-streaming={streaming || undefined}
       >
         <ReactMarkdown
-          remarkPlugins={[remarkGfm, remarkMath]}
+          remarkPlugins={
+            breaks
+              ? [remarkGfm, remarkMath, remarkHardBreaks]
+              : [remarkGfm, remarkMath]
+          }
           rehypePlugins={[
             [rehypeKatex, { throwOnError: false, strict: false }],
           ]}
