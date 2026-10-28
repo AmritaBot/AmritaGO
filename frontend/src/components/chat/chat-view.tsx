@@ -635,7 +635,7 @@ export function ChatView({
     runningTools,
     cancelTool,
     injectCapability,
-    pendingPrompt,
+    queuedPrompt,
     stopping,
     offerPrompt,
     revokePrompt,
@@ -663,29 +663,23 @@ export function ChatView({
   const effectivePermission = narrowPermission(allowedPermissions, permission);
 
   /**
-   * The one prompt that can still be rewritten: the last user message, with
-   * nothing but failed turns after it.
+   * The one prompt the user may rewrite: the last message they sent.
    *
-   * Same rule as the server, so the button is never offered for a message the
-   * API would refuse — and never offered while a turn is running, when the
-   * context is still in use.
+   * Editing it is how the user corrects course mid-run — the server stops the
+   * turn, drops whatever was queued behind it and rewinds the conversation — so
+   * it is offered while a turn is running, failed or answered. A queued message
+   * is excluded because it has no turn of its own yet; withdraw that with the
+   * chip above the composer instead.
    */
   const editableId = useMemo(() => {
-    if (busy) return null;
     for (let index = messages.length - 1; index >= 0; index -= 1) {
       const message = messages[index];
       if (message.role !== "user") continue;
-      const answered = messages
-        .slice(index + 1)
-        .some(
-          (item) =>
-            item.role === "assistant" &&
-            (item.content.trim() !== "" || !item.error),
-        );
-      return !answered && !message.streaming ? message.id : null;
+      if (message.id === queuedPrompt?.bubbleId) continue;
+      return message.id;
     }
     return null;
-  }, [busy, messages]);
+  }, [messages, queuedPrompt]);
 
   /**
    * Save one attribute of the active model from the switcher.
@@ -957,7 +951,7 @@ export function ChatView({
         <Composer
           busy={busy}
           stopping={stopping}
-          pendingPrompt={pendingPrompt}
+          pendingPrompt={queuedPrompt}
           inject={injectCapability}
           seed={revokedDraft}
           onSeedConsumed={clearRevokedDraft}

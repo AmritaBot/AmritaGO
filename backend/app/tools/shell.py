@@ -508,7 +508,7 @@ class ShellSession:
         async with self._lock:
             start_dir = self.launch_dir()
             if self.kind == "pwsh":
-                Path(start_dir).mkdir(parents=True, exist_ok=True)
+                await asyncio.to_thread(Path(start_dir).mkdir, parents=True, exist_ok=True)
             self.cwd.mkdir(parents=True, exist_ok=True)
             script_dir = Path(tempfile.mkdtemp(prefix="amrita-sh-"))
             state = self.state_file

@@ -125,6 +125,21 @@ function appendReasoning(trace: TraceEntry[], text: string): TraceEntry[] {
   return [...trace, { kind: "reasoning", text }];
 }
 
+/**
+ * A message waiting to become the next turn.
+ *
+ * ``bubbleId`` is drawn the moment the message is sent: the server never
+ * echoes a queued prompt, and the bubble belongs where it was sent rather
+ * than after the steps of the turn it interrupted. ``handle`` is the server's
+ * acknowledgement and the only thing a revoke can name.
+ */
+export interface QueuedPrompt {
+  bubbleId: string;
+  content: string;
+  attachments: ChatMessage["attachments"];
+  handle: QueuedPromptHandle | null;
+}
+
 export function useChatSocket(sessionId: string | null) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [connection, setConnection] = useState<ConnectionState>("closed");
@@ -151,9 +166,7 @@ export function useChatSocket(sessionId: string | null) {
   const [injectCapability, setInjectCapability] =
     useState<InjectCapability | null>(null);
   // The message waiting to become the next turn. At most one, by design.
-  const [pendingPrompt, setPendingPrompt] = useState<QueuedPromptHandle | null>(
-    null,
-  );
+  const [queuedPrompt, setQueuedPrompt] = useState<QueuedPrompt | null>(null);
   // A stop has been requested and the turn has not ended yet.
   const [stopping, setStopping] = useState(false);
   const startedAtRef = useRef<number | null>(null);
@@ -177,16 +190,27 @@ export function useChatSocket(sessionId: string | null) {
   const messagesRef = useRef<ChatMessage[]>([]);
   // Track a stop waiting for its suspend point so a second press can escalate it.
   const stoppingRef = useRef(false);
-  const pendingIdRef = useRef<string | null>(null);
-  // The queued prompt itself, so a revoke can hand its text back.
-  const pendingPromptRef = useRef<QueuedPromptHandle | null>(null);
-  // Bubble drawn when the prompt was queued: reused by ``start``, removed on revoke.
-  const pendingBubbleRef = useRef<string | null>(null);
+  // Mirror of ``queuedPrompt`` so callbacks read the latest value.
+  const queuedRef = useRef<QueuedPrompt | null>(null);
+  // Mirror of ``busy``: ``send`` must see the value this tick, not last render.
+  const busyRef = useRef(false);
+  // Work to run once the current run closes, e.g. the resend after an edit.
+  const afterDoneRef = useRef<(() => void) | null>(null);
   // Text of a prompt the user revoked, handed back to the composer.
   const [revokedDraft, setRevokedDraft] = useState<string | null>(null);
 
   sessionRef.current = sessionId;
   messagesRef.current = messages;
+
+  const updateBusy = useCallback((value: boolean) => {
+    busyRef.current = value;
+    setBusy(value);
+  }, []);
+
+  const updateQueued = useCallback((next: QueuedPrompt | null) => {
+    queuedRef.current = next;
+    setQueuedPrompt(next);
+  }, []);
 
   const clearTimer = useCallback(() => {
     if (timerRef.current !== null) {
@@ -291,7 +315,7 @@ export function useChatSocket(sessionId: string | null) {
       const id = activeIdRef.current;
       activeIdRef.current = null;
       // A chained turn keeps the run alive: ``busy`` only ends with ``done``.
-      if (!options?.keepBusy) setBusy(false);
+      if (!options?.keepBusy) updateBusy(false);
       if (!id) return;
       setMessages((prev) =>
         prev.map((message) =>
@@ -320,7 +344,7 @@ export function useChatSocket(sessionId: string | null) {
         ),
       );
     },
-    [flush, settleThinking],
+    [flush, settleThinking, updateBusy],
   );
 
   const handleEvent = useCallback(
@@ -347,7 +371,7 @@ export function useChatSocket(sessionId: string | null) {
           clearTimer();
           setMessages((prev) => {
             const base = [...prev];
-            if (pendingBubbleRef.current === null) {
+            if (queuedRef.current === null) {
               // Replay: drop the trailing duplicate the optimistic bubble left behind.
               const last = base.at(-1);
               const before = base.at(-2);
@@ -376,12 +400,9 @@ export function useChatSocket(sessionId: string | null) {
             );
           });
           if (!id) ensureAssistant();
-          setBusy(true);
+          updateBusy(true);
           // The server took the queued message to start this turn.
-          setPendingPrompt(null);
-          pendingPromptRef.current = null;
-          pendingIdRef.current = null;
-          pendingBubbleRef.current = null;
+          updateQueued(null);
           stoppingRef.current = false;
           setStopping(false);
           setInjectCapability(event.inject ?? null);
@@ -527,30 +548,23 @@ export function useChatSocket(sessionId: string | null) {
           break;
         }
         case "queued": {
-          setPendingPrompt(event.handle);
-          pendingPromptRef.current = event.handle;
-          pendingIdRef.current = event.handle.id;
+          const current = queuedRef.current;
+          if (current !== null)
+            updateQueued({ ...current, handle: event.handle });
           break;
         }
         case "unqueued": {
           // ``too_late`` means the turn already started, so the bubble stays.
-          if (pendingIdRef.current === event.handle_id) {
-            if (event.status === "revoked") {
-              const bubbleId = pendingBubbleRef.current;
-              if (bubbleId) {
-                // It never became a turn, so it must not stay in the transcript.
-                setMessages((prev) =>
-                  prev.filter((message) => message.id !== bubbleId),
-                );
-              }
-              const text = pendingPromptRef.current?.content;
-              if (text) setRevokedDraft(text);
-            }
-            setPendingPrompt(null);
-            pendingPromptRef.current = null;
-            pendingIdRef.current = null;
-            pendingBubbleRef.current = null;
+          const current = queuedRef.current;
+          if (current?.handle?.id !== event.handle_id) break;
+          if (event.status === "revoked") {
+            // It never became a turn, so it must not stay in the transcript.
+            setMessages((prev) =>
+              prev.filter((message) => message.id !== current.bubbleId),
+            );
+            if (current.content) setRevokedDraft(current.content);
           }
+          updateQueued(null);
           break;
         }
         case "stop_ack": {
@@ -572,7 +586,7 @@ export function useChatSocket(sessionId: string | null) {
             ),
           );
           activeIdRef.current = null;
-          setBusy(false);
+          updateBusy(false);
           setRunningTools({});
           break;
         }
@@ -581,10 +595,7 @@ export function useChatSocket(sessionId: string | null) {
           finalizeAssistant({ usage: event.usage ?? null, live: null });
           setLiveUsage(null);
           setRunningTools({});
-          setPendingPrompt(null);
-          pendingPromptRef.current = null;
-          pendingIdRef.current = null;
-          pendingBubbleRef.current = null;
+          updateQueued(null);
           stoppingRef.current = false;
           setStopping(false);
           setInjectCapability(null);
@@ -627,6 +638,10 @@ export function useChatSocket(sessionId: string | null) {
               }),
             );
           }
+          // A resend deferred by an edit runs now that the run is closed.
+          const after = afterDoneRef.current;
+          afterDoneRef.current = null;
+          after?.();
           break;
         }
         case "pong":
@@ -642,6 +657,8 @@ export function useChatSocket(sessionId: string | null) {
       flush,
       pushDelta,
       settleThinking,
+      updateBusy,
+      updateQueued,
     ],
   );
 
@@ -702,13 +719,11 @@ export function useChatSocket(sessionId: string | null) {
       activeIdRef.current = null;
       streamIdRef.current = null;
       setStreamId(null);
-      setBusy(false);
+      updateBusy(false);
       setLiveUsage(null);
       setPendingConfirms([]);
       setRunningTools({});
-      setPendingPrompt(null);
-      pendingPromptRef.current = null;
-      pendingIdRef.current = null;
+      updateQueued(null);
       stoppingRef.current = false;
       setStopping(false);
       setInjectCapability(null);
@@ -833,7 +848,7 @@ export function useChatSocket(sessionId: string | null) {
       access?: string | null,
     ) => {
       const text = message.trim();
-      if ((!text && attachments.length === 0) || !sessionId || busy)
+      if ((!text && attachments.length === 0) || !sessionId || busyRef.current)
         return false;
       const mock = isMockMode();
       const socket = socketRef.current;
@@ -862,7 +877,7 @@ export function useChatSocket(sessionId: string | null) {
       // Reset reasoning measurements when a new turn starts.
       thinkStartRef.current = null;
       thinkTotalRef.current = 0;
-      setBusy(true);
+      updateBusy(true);
       startedAtRef.current = Date.now();
       firstDeltaRef.current = null;
 
@@ -893,7 +908,7 @@ export function useChatSocket(sessionId: string | null) {
       );
       return true;
     },
-    [busy, clearMock, connect, handleEvent, sessionId],
+    [clearMock, connect, handleEvent, sessionId, updateBusy],
   );
 
   const stop = useCallback(
@@ -937,9 +952,11 @@ export function useChatSocket(sessionId: string | null) {
       }
       // Draw it now: the server never echoes a queued prompt, and the bubble belongs at the moment it was sent.
       const bubbleId = crypto.randomUUID();
-      pendingBubbleRef.current = bubbleId;
+      // Offering again replaces the previous one, bubble included.
+      const previous = queuedRef.current;
+      updateQueued({ bubbleId, content: body, attachments, handle: null });
       setMessages((prev) => [
-        ...prev,
+        ...prev.filter((message) => message.id !== previous?.bubbleId),
         {
           id: bubbleId,
           role: "user",
@@ -966,7 +983,7 @@ export function useChatSocket(sessionId: string | null) {
       );
       return true;
     },
-    [sessionId],
+    [sessionId, updateQueued],
   );
 
   /** Forget the text restored into the composer after a revocation. */
@@ -975,23 +992,25 @@ export function useChatSocket(sessionId: string | null) {
   /** Withdraw a queued message that has not started yet. */
   const revokePrompt = useCallback(() => {
     const socket = socketRef.current;
-    const handle = pendingIdRef.current;
-    if (!sessionId || !handle) return;
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
-      setPendingPrompt(null);
-      pendingPromptRef.current = null;
-      pendingIdRef.current = null;
-      pendingBubbleRef.current = null;
+    const current = queuedRef.current;
+    if (!sessionId || !current) return;
+    if (!current.handle || !socket || socket.readyState !== WebSocket.OPEN) {
+      // Nothing reached the server, so dropping it locally is the whole revoke.
+      setMessages((prev) =>
+        prev.filter((message) => message.id !== current.bubbleId),
+      );
+      if (current.content) setRevokedDraft(current.content);
+      updateQueued(null);
       return;
     }
     socket.send(
       JSON.stringify({
         type: "prompt_revoke",
         session_id: sessionId,
-        handle_id: handle,
+        handle_id: current.handle.id,
       }),
     );
-  }, [sessionId]);
+  }, [sessionId, updateQueued]);
 
   /**
    * Re-run the prompt behind a failed turn.
@@ -1031,11 +1050,13 @@ export function useChatSocket(sessionId: string | null) {
   }, [send]);
 
   /**
-   * Rewrite an unanswered prompt and send it again.
+   * Rewrite the last prompt and send it again, at any moment.
    *
-   * The server rolls the model context back to before that prompt and drops the
-   * failed exchange from the transcript; the same tail is removed here, so the
-   * optimistic bubble for the new text lands where the old one was.
+   * The server ends the running turn, drops the queued message and rolls the
+   * context back to before that prompt; the same tail is removed here so the
+   * bubble for the new text lands where the old one was. Because the server
+   * answers only after the run has closed, the resend waits for ``done`` when
+   * the edit arrived mid-turn.
    */
   const editPrompt = useCallback(
     async (messageId: string, content: string) => {
@@ -1053,19 +1074,29 @@ export function useChatSocket(sessionId: string | null) {
           });
         } catch (error) {
           toast.error(String(error).replace(/^Error:\s*/, ""));
+          // A refusal means this transcript is behind the server, so resync.
+          void reload();
           return false;
         }
       }
-      setMessages((prev) => prev.slice(0, index));
-      const sent = send(text, target.attachments ?? []);
-      if (!sent) {
-        // The rollback already happened on disk; resync so the screen agrees.
-        void reload();
-        toast.error("连接已断开，已回滚这条消息，请稍后重新发送");
+      const resend = () => {
+        updateQueued(null);
+        setMessages((prev) => prev.slice(0, index));
+        const sent = send(text, target.attachments ?? []);
+        if (!sent) {
+          // The rollback already happened on disk; resync so the screen agrees.
+          void reload();
+          toast.error("连接已断开，已回滚这条消息，请稍后重新发送");
+        }
+      };
+      if (busyRef.current) {
+        afterDoneRef.current = resend;
+        return true;
       }
-      return sent;
+      resend();
+      return true;
     },
-    [reload, send, sessionId],
+    [reload, send, sessionId, updateQueued],
   );
 
   /**
@@ -1214,7 +1245,7 @@ export function useChatSocket(sessionId: string | null) {
       pendingConfirms,
       todos,
       injectCapability,
-      pendingPrompt,
+      queuedPrompt,
       stopping,
       send,
       stop,
@@ -1245,7 +1276,7 @@ export function useChatSocket(sessionId: string | null) {
       pendingConfirms,
       todos,
       injectCapability,
-      pendingPrompt,
+      queuedPrompt,
       stopping,
       send,
       stop,

@@ -1,18 +1,18 @@
-"""Rewriting a prompt the agent never answered.
+"""Rewriting the last prompt, whether it was answered or not.
 
-A prompt that failed — no key, a provider error, a stopped turn — is still the
-user's to change. Rewriting it rolls the model context back to just before that
-prompt, drops the failed exchange from the transcript, and announces the change
-as a ``message_modify`` event; the client then sends the edited text as an
-ordinary turn.
+The last user message is always the user's to change. Rewriting it ends
+the running turn, rolls the model context back to just before that prompt,
+drops everything after it from the transcript, and announces the change as a
+``message_modify`` event; the client then sends the edited text as an ordinary
+turn.
 
-Everything after the prompt goes with it. A tool call that already ran cannot
-be kept while the request that caused it is replaced, and a half-answered turn
-is not something a later turn can continue from.
+A pending injected prompt is dropped at the same time: it was queued behind the
+turn this edit is deleting, so it can no longer become a turn of its own.
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -20,8 +20,10 @@ from typing import Any
 from amrita_sense.logging import logger
 
 from app.runtime import events
+from app.runtime.audit import BROKER
+from app.runtime.limit_gate import LIMITS
+from app.runtime.prompt_inject import SLOTS, StopMode, TurnInjector
 from app.runtime.sessions import (
-    HistoryEntry,
     get_meta,
     load_context,
     load_history,
@@ -30,6 +32,7 @@ from app.runtime.sessions import (
     write_history,
 )
 from app.runtime.stream_hub import HUB
+from app.runtime.tool_gate import TOOLS
 
 
 class MessageEditError(RuntimeError):
@@ -50,16 +53,8 @@ class EditOutcome:
     # Model-context messages dropped with it.
     removed_messages: int
     context_messages: int
-
-
-def _failed_only(entry: HistoryEntry) -> bool:
-    """A bubble that reports a failure and carries no answer."""
-    return entry.role == "assistant" and not entry.content.strip() and bool(entry.error)
-
-
-def _unanswered(entries: list[HistoryEntry], index: int) -> bool:
-    """Whether nothing after ``index`` is an actual reply."""
-    return all(_failed_only(entry) for entry in entries[index + 1 :])
+    # A prompt queued behind the edited turn was vetoed.
+    dropped_prompt: bool = False
 
 
 def _content_text(content: Any) -> str:
@@ -103,7 +98,45 @@ def _trim_index(messages: list[Any], prompt: str) -> int | None:
     return None
 
 
-async def rewrite_unanswered_prompt(
+async def _wait_idle(session_id: str, timeout: float = 20.0) -> None:
+    """Wait until the session has no running chain.
+
+    Awaiting the turn task is not enough: the driver keeps going after a turn
+    (it may chain a successor) and writes history on its way out, so a rollback
+    that ran earlier would be overwritten by that write.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while HUB.busy(session_id):
+        if loop.time() >= deadline:
+            logger.warning(f"Session {session_id}: still running after {timeout}s, editing anyway")
+            return
+        await asyncio.sleep(0.02)
+
+
+async def _end_running(session_id: str) -> bool:
+    """Stop the running turn and answer anything it is waiting on.
+
+    The pending prompt is dropped *before* the stop so the driver cannot start a
+    successor turn with the message this edit is deleting, and the chain is
+    awaited *before* the rollback so its history write cannot land after it.
+    """
+    dropped = await SLOTS.slot(session_id).clear() is not None
+    # Confirmations and gate prompts belong to the turn that is about to end.
+    BROKER.reject_session(session_id, "这条消息已被修改，确认请求已取消。")
+    LIMITS.reject_session(session_id)
+    TOOLS.cancel_session(session_id, "这条消息已被修改")
+    channel = HUB.latest(session_id)
+    if channel is not None and not channel.finished:
+        await TurnInjector(channel).stop(StopMode.IMMEDIATE)
+    await _wait_idle(session_id)
+    # A prompt queued while the turn was winding down goes too.
+    if await SLOTS.slot(session_id).clear() is not None:
+        dropped = True
+    return dropped
+
+
+async def rewrite_last_prompt(
     session_id: str,
     content: str,
     *,
@@ -119,11 +152,11 @@ async def rewrite_unanswered_prompt(
     text = content.strip()
     if not text:
         raise MessageEditError("修改后的内容不能为空")
-    if HUB.busy(session_id):
-        raise MessageEditError("这一轮还在跑，等它结束再改")
     meta = await get_meta(session_id)
     if meta is None:
         raise MessageEditError("会话不存在", status=404)
+
+    dropped = await _end_running(session_id)
 
     entries = await load_history(session_id)
     index: int | None = None
@@ -137,8 +170,6 @@ async def rewrite_unanswered_prompt(
     # Reject stale clients before editing so the version mismatch is explicit.
     if expected is not None and expected.strip() != target.content.strip():
         raise MessageEditError("会话已经变了，请刷新后再改")
-    if not _unanswered(entries, index):
-        raise MessageEditError("这条消息已经有回复了，不能再改")
 
     keep = entries[:index]
 
@@ -167,6 +198,7 @@ async def rewrite_unanswered_prompt(
         removed_entries=len(entries) - len(keep),
         removed_messages=removed_messages,
         context_messages=len(memory.messages),
+        dropped_prompt=dropped,
     )
     return EditOutcome(
         entry_id=target.id,
@@ -175,7 +207,8 @@ async def rewrite_unanswered_prompt(
         removed_entries=len(entries) - len(keep),
         removed_messages=removed_messages,
         context_messages=len(memory.messages),
+        dropped_prompt=dropped,
     )
 
 
-__all__ = ["EditOutcome", "MessageEditError", "rewrite_unanswered_prompt"]
+__all__ = ["EditOutcome", "MessageEditError", "rewrite_last_prompt"]

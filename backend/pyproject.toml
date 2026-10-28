@@ -1,6 +1,6 @@
 [project]
 name = "amrita-go"
-version = "0.1.0a5"
+version = "0.1.0a6"
 description = "A agent workstation built on AmritaCore"
 requires-python = ">=3.10,<3.15"
 dependencies = [
@@ -49,17 +49,6 @@ ignore = [
     "RUF003",
     "RUF036",
     "UP037",
+    "E402",
     "PERF203",
 ]
-
-[tool.ruff.lint.per-file-ignores]
-"app/capabilities/mcp_runtime.py" = ["ASYNC109"]
-"app/runtime/agent_runtime.py" = ["BLE001"]
-"app/plugins/__init__.py" = ["BLE001"]
-"app/capabilities/__init__.py" = ["BLE001"]
-"app/core/workspaces.py" = ["ASYNC240"]
-"app/main.py" = ["ASYNC240"]
-"app/tools/shell.py" = ["ASYNC240"]
-"scripts/*.py" = ["ASYNC210", "E402", "ASYNC110"]
-
-

@@ -78,7 +78,7 @@ async def list_workspaces() -> list[dict]:
 
 
 async def add_workspace(raw: str) -> dict:
-    candidate = Path(raw).expanduser()
+    candidate = await asyncio.to_thread(Path(raw).expanduser)
     try:
         resolved = candidate.resolve(strict=True)
     except OSError as exc:
@@ -102,7 +102,7 @@ async def add_workspace(raw: str) -> dict:
 
 
 async def remove_workspace(raw: str) -> bool:
-    resolved = str(Path(raw).expanduser().resolve())
+    resolved = str((await asyncio.to_thread(Path(raw).expanduser)).resolve())
     if resolved == str(PROJECT_ROOT):
         raise ValueError("不能移除默认工作区")
 

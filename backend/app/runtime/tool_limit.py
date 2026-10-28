@@ -187,9 +187,7 @@ class LimitAwareStrategy(ReActAgentStrategy):
             return
         self._stopped = True
         self._suggested_stop = True
-        self._store_final_response(
-            UniResponse(role="assistant", content="", tool_calls=None)
-        )
+        self._store_final_response(UniResponse(role="assistant", content="", tool_calls=None))
 
     async def call_tool(self, tool_call: ToolCall) -> str:
         """Execute one tool call, bounded in time and cancelable by the user.

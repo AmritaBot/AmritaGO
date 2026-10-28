@@ -83,7 +83,7 @@ from app.runtime.attachments import AttachmentError, save_image, save_text
 from app.runtime.audit import BROKER
 from app.runtime.commands import COMMANDS, CommandError, fold_session
 from app.runtime.limit_gate import LIMITS
-from app.runtime.message_edit import MessageEditError, rewrite_unanswered_prompt
+from app.runtime.message_edit import MessageEditError, rewrite_last_prompt
 from app.runtime.prompt_inject import (
     SLOTS,
     PromptInjectAPI,
@@ -727,7 +727,7 @@ async def put_agent(name: str, payload: AgentRawPayload) -> dict[str, Any]:
     except AgentPresetError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
     finally:
-        candidate.unlink(missing_ok=True)
+        await asyncio.to_thread(candidate.unlink, missing_ok=True)
 
     preset.path.write_text(payload.raw, encoding="utf-8")
     return to_public(parse_preset(preset.path, preset.scope))
@@ -1218,14 +1218,15 @@ class MessageEditPayload(BaseModel):
 
 @app.post(f"{API}/sessions/{{session_id}}/messages/edit")
 async def edit_message_endpoint(session_id: str, payload: MessageEditPayload) -> dict[str, Any]:
-    """Rewrite the last prompt the agent never answered.
+    """Rewrite the last prompt and hand the client back a clean tail.
 
-    The context is rolled back to before that prompt and the failed exchange
-    leaves the transcript; the client sends the edited text as a normal turn.
-    Subscribers to ``message_modify`` are told what changed.
+    Works at any moment: a running turn is stopped first, so the user never has
+    to wait for the agent to finish before correcting what they asked. The
+    context is rolled back to before that prompt and everything after it leaves
+    the transcript; the client sends the edited text as a normal turn.
     """
     try:
-        outcome = await rewrite_unanswered_prompt(
+        outcome = await rewrite_last_prompt(
             session_id,
             payload.content,
             expected=payload.expected,
@@ -1240,6 +1241,7 @@ async def edit_message_endpoint(session_id: str, payload: MessageEditPayload) ->
         "removed_entries": outcome.removed_entries,
         "removed_messages": outcome.removed_messages,
         "context_messages": outcome.context_messages,
+        "dropped_prompt": outcome.dropped_prompt,
     }
 
 

@@ -57,10 +57,10 @@ async def main() -> int:
         assert pong["type"] == "pong", pong
         print("socket survives rejection: ok")
 
-    state = httpx.get(f"{BASE}/api/streams/{session_id}").json()
+    state = httpx.get(f"{BASE}/api/streams/{session_id}").json()  # noqa: ASYNC210
     print("stream state:", state)
 
-    httpx.delete(f"{BASE}/api/sessions/{session_id}")
+    httpx.delete(f"{BASE}/api/sessions/{session_id}")  # noqa: ASYNC210
     print("cleaned up")
     return 0
 

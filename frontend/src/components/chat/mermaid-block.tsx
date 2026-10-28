@@ -1,14 +1,10 @@
 /**
  * Renders fenced ```mermaid``` blocks as diagrams.
  *
- * While a message streams, the fence is usually incomplete; Mermaid throws on
- * partial sources. So:
- *
- * - nothing is rendered until the source looks like a diagram declaration;
- * - while streaming we debounce, and a parse error simply keeps the previous
- *   diagram (never flashes an error at the user mid-answer);
- * - once streaming stops, failures are shown so a genuinely broken diagram is
- *   visible instead of silently swallowed.
+ * Nothing is rendered while the message streams: a half-written fence is rarely
+ * valid Mermaid, and each failed attempt leaves a stray error node in the page.
+ * The source is shown instead, and the diagram is drawn once the text settles.
+ * A genuine failure is then reported, never swallowed.
  */
 
 import mermaid from "mermaid";
@@ -35,13 +31,8 @@ const DECLARATION =
   /^\s*(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram(-v2)?|erDiagram|journey|gantt|pie|gitGraph|mindmap|timeline|quadrantChart|requirementDiagram|C4Context|block-beta|sankey-beta|xychart-beta)\b/;
 
 function looksRenderable(code: string): boolean {
-  const trimmed = code.trim();
-  if (!trimmed) return false;
-  return DECLARATION.test(trimmed);
+  return DECLARATION.test(code.trim());
 }
-
-/** Streaming render debounce: Mermaid is slow, so settle first. */
-const SETTLE_MS = 350;
 
 export function MermaidBlock({
   code,
@@ -51,61 +42,68 @@ export function MermaidBlock({
   streaming?: boolean;
 }) {
   const reactId = useId();
-  const renderId = `mermaid-${reactId.replace(/[^a-zA-Z0-9]/g, "")}`;
+  const baseId = `mermaid-${reactId.replace(/[^a-zA-Z0-9]/g, "")}`;
+  // Mermaid deletes the node it renders into, so the id must never be reused.
+  const seq = useRef(0);
   const [svg, setSvg] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [settled, setSettled] = useState(code);
-  const lastGood = useRef("");
+  // Mermaid bakes the theme into the SVG, so a theme switch needs a re-render.
+  const [dark, setDark] = useState(() =>
+    document.documentElement.classList.contains("dark"),
+  );
 
   useEffect(() => {
-    if (!streaming) {
-      setSettled(code);
-      return;
-    }
-    const timer = window.setTimeout(() => setSettled(code), SETTLE_MS);
-    return () => window.clearTimeout(timer);
-  }, [code, streaming]);
+    const root = document.documentElement;
+    const observer = new MutationObserver(() =>
+      setDark(root.classList.contains("dark")),
+    );
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
-    if (!looksRenderable(settled)) {
+    if (streaming || !looksRenderable(code)) {
       setSvg("");
       setError(null);
-      lastGood.current = "";
       return;
     }
 
     let cancelled = false;
-    const dark = document.documentElement.classList.contains("dark");
     ensureInit(dark);
+    seq.current += 1;
+    const renderId = `${baseId}-${seq.current}`;
 
     (async () => {
       try {
-        const result = await mermaid.render(renderId, settled);
+        const result = await mermaid.render(renderId, code);
         if (cancelled) return;
+        if (!result.svg.includes("<svg"))
+          throw new Error("mermaid 没有返回图形");
         setSvg(result.svg);
         setError(null);
-        lastGood.current = settled;
       } catch (exc) {
         if (cancelled) return;
-        // Ignore parse failures while the diagram is still streaming.
-        if (!streaming) {
-          setError(exc instanceof Error ? exc.message : String(exc));
-          setSvg("");
-        }
+        // A failed render leaves its error node in the page; it must not linger.
+        document.getElementById(`d${renderId}`)?.remove();
+        setError(exc instanceof Error ? exc.message : String(exc));
+        setSvg("");
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [settled, streaming, renderId]);
+  }, [baseId, code, dark, streaming]);
+
+  // An empty fence is a placeholder, not a diagram: a bordered box reads as a failure.
+  if (!code.trim()) return null;
 
   if (error) {
     return (
       <div className="mermaid-block border-destructive/40">
         <div className="mermaid-error">{error}</div>
         <pre className="mt-2 overflow-x-auto font-mono text-xs whitespace-pre-wrap text-muted-foreground">
-          {settled}
+          {code}
         </pre>
       </div>
     );
@@ -114,7 +112,7 @@ export function MermaidBlock({
   if (!svg) {
     return (
       <pre className="mermaid-block font-mono text-xs whitespace-pre-wrap text-muted-foreground">
-        {settled}
+        {code}
       </pre>
     );
   }
