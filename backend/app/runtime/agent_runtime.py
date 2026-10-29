@@ -73,6 +73,10 @@ class TurnDraft:
     workflow: str = ""
     trace: list[dict[str, Any]] = field(default_factory=list)
     answer: list[str] = field(default_factory=list)
+    # Where each step's narration ends in ``answer``; the rest is the answer.
+    sections: list[dict[str, Any]] = field(default_factory=list)
+    # Step that was running when the current section started.
+    current_step: str = ""
     error: str | None = None
     steps: int = 0
     tool_calls: int = 0
@@ -90,6 +94,34 @@ class TurnDraft:
     @property
     def answer_text(self) -> str:
         return "".join(self.answer)
+
+    def close_section(self, next_step: str) -> None:
+        """Mark where the running step's narration ends.
+
+        A step-driven workflow makes the model talk at every step, and each of
+        those talks is a summary of everything so far. Concatenated into one
+        block they read as the answer repeating itself, so the boundaries are
+        recorded here and the UI folds everything before the last boundary
+        away. Only a boundary with text in front of it is worth storing.
+        """
+        end = len(self.answer_text)
+        start = self.sections[-1]["end"] if self.sections else 0
+        if end > start and self.answer_text[start:end].strip():
+            self.sections.append({"step": self.current_step, "end": end})
+        self.current_step = next_step
+
+    def settle_sections(self) -> None:
+        """The text after the last boundary is the answer.
+
+        A workflow that announces a step *after* the closing sentence would
+        leave an empty answer, so boundaries with nothing behind them are
+        dropped: their text becomes the answer instead.
+        """
+        while self.sections:
+            tail = self.answer_text[self.sections[-1]["end"] :]
+            if tail.strip():
+                return
+            self.sections.pop()
 
 
 def _text_of(content: Any) -> str:
@@ -237,8 +269,40 @@ def _is_step(metadata: dict[str, Any]) -> bool:
     return str(metadata.get("type") or "").startswith("step")
 
 
+def _step_name(metadata: dict[str, Any]) -> str:
+    """The step's own name (``decompose``, ``intro``, …), for labelling."""
+    return str(metadata.get("extra_type") or "")
+
+
 def _is_tool_call(metadata: dict[str, Any]) -> bool:
     return metadata.get("type") in {"function_call", "skill_call", "tool_call"}
+
+
+def _needs_break(answer: str, text: str) -> bool:
+    """Whether two consecutive model utterances need a blank line between them.
+
+    One turn is several model rounds. A round that ends to run a tool rarely
+    ends with a newline, so appending the next round's text straight on turns
+    "…现在进入最后的整体校验。" and "全部完成，校验通过。" into a single
+    sentence — two separate statements that read as one.
+    """
+    if not answer or not text.strip():
+        return False
+    return not answer.endswith("\n") and not text.startswith("\n")
+
+
+def _title_of(prompt: str) -> str:
+    """A session title from the first non-blank line, or ``""``.
+
+    An image-only prompt has no text at all: taking ``splitlines()[0]`` on it
+    raised ``IndexError`` after the answer was already committed, so the turn
+    ended with a traceback instead of its usage summary.
+    """
+    for line in prompt.splitlines():
+        stripped = line.strip()
+        if stripped:
+            return stripped[:40]
+    return ""
 
 
 def _error_text(exc: BaseException) -> str:
@@ -427,6 +491,8 @@ async def _iter_events(
     # Keep state on the draft because cancellation closes this generator and discards its locals.
     trace = draft.trace
     last_rounds = 0
+    # Two model rounds are two utterances; gluing them reads as one sentence.
+    pending_break = False
 
     def announce_compaction() -> dict[str, Any]:
         """The compaction outcome, also kept in the transcript.
@@ -457,8 +523,11 @@ async def _iter_events(
                 if metadata.get("type") == "error":
                     # Keep the failure so the bubble still explains itself after a reload.
                     draft.error = str(metadata.get("error") or payload["content"])
+                # Anything that is not text ends the current utterance.
+                pending_break = True
                 if _is_step(metadata):
                     draft.steps += 1
+                    draft.close_section(_step_name(metadata))
                 if _is_tool_call(metadata):
                     # Deduplicate call events by tool_id.
                     tool_id = str(metadata.get("tool_id") or "")
@@ -487,6 +556,11 @@ async def _iter_events(
             )
             if not text:
                 continue
+            if pending_break:
+                pending_break = False
+                if _needs_break(draft.answer_text, text):
+                    draft.answer.append("\n\n")
+                    yield {"type": "delta", "text": "\n\n"}
             now = time.time()
             draft.first_delta_at = draft.first_delta_at or now
             draft.last_delta_at = now
@@ -528,12 +602,14 @@ async def _iter_events(
 
     # Treat trace as content so a stopped turn's notice remains in the transcript.
     if answer or draft.error or trace:
+        draft.settle_sections()
         await append_history(
             session_id,
             HistoryEntry(
                 role="assistant",
                 content=answer,
                 trace=trace,
+                sections=draft.sections,
                 error=draft.error,
                 usage=usage,
                 steps=draft.steps,
@@ -547,7 +623,9 @@ async def _iter_events(
     totals, meta = await record_turn_usage(session_id, usage)
     if meta is not None:
         if meta.title in {"", "新会话"}:
-            meta.title = user_input.strip().splitlines()[0][:40] or "新会话"
+            title = _title_of(user_input)
+            if title:
+                meta.title = title
         meta.preset = preset.name
         meta.agent = agent_name
         await save_meta(meta)
@@ -657,12 +735,14 @@ async def _finalize_stopped(
             await _commit_interrupted(draft, user_input, attachments)
         # Keep only what the turn actually produced; there is no reply to invent for a stop.
         if not draft.history_written and (draft.answer_text or draft.error or draft.trace):
+            draft.settle_sections()
             await append_history(
                 draft.session_id,
                 HistoryEntry(
                     role="assistant",
                     content=draft.answer_text,
                     trace=draft.trace,
+                    sections=draft.sections,
                     error=draft.error,
                     steps=draft.steps,
                     tool_calls=draft.tool_calls,

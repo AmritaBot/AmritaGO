@@ -15,6 +15,7 @@ import {
 import { toast } from "sonner";
 
 import { Markdown } from "@/components/chat/markdown";
+import { StepNotes, splitSections } from "@/components/chat/step-notes";
 import { ChatFooter } from "@/components/chat/chat-footer";
 import { Trace } from "@/components/chat/trace";
 import { AuditPanel } from "@/components/chat/audit-panel";
@@ -273,9 +274,14 @@ function MessageBubble({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
   const isUser = message.role === "user";
+  // A step-driven workflow narrates at every step; only the tail is the answer.
+  const { notes, answer } = useMemo(
+    () => splitSections(message.content, message.sections),
+    [message.content, message.sections],
+  );
 
   const copy = async () => {
-    if (await copyText(message.content)) {
+    if (await copyText(answer || message.content)) {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
     } else {
@@ -421,9 +427,11 @@ function MessageBubble({
         onCancelTool={onCancelTool}
       />
 
-      {message.content ? (
-        <Markdown content={message.content} streaming={message.streaming} />
-      ) : message.streaming ? (
+      <StepNotes notes={notes} streaming={message.streaming} />
+
+      {answer ? (
+        <Markdown content={answer} streaming={message.streaming} />
+      ) : message.streaming && !message.content ? (
         <ThinkingIndicator />
       ) : null}
 

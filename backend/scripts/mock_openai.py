@@ -29,6 +29,8 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 app = FastAPI()
 
 CHUNK_DELAY = float(os.environ.get("MOCK_CHUNK_DELAY", "0.01"))
+# Optional narration emitted before a tool call, so multi-round text can be tested.
+NARRATION = os.environ.get("MOCK_NARRATION", "")
 
 REPLY = (
     "这是来自本地 mock 模型的流式回答。\n\n"
@@ -115,6 +117,8 @@ async def completions(request: Request) -> Response:
 
     async def events() -> AsyncGenerator[bytes, None]:
         if target:
+            if NARRATION:
+                yield f"data: {json.dumps(_chunk(NARRATION), ensure_ascii=False)}\n\n".encode()
             call = {
                 "id": "chatcmpl-mock",
                 "object": "chat.completion.chunk",

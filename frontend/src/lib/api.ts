@@ -79,6 +79,19 @@ export type TraceStep =
   | { kind: "reasoning"; text: string }
   | { kind: "event"; content: string; metadata: Record<string, unknown> };
 
+/**
+ * Where one step's narration ends inside a turn's text.
+ *
+ * A step-driven workflow makes the model talk at every step, and each of those
+ * talks summarises everything so far. The UI folds everything before the last
+ * boundary into a collapsible block, so only the text after it reads as the
+ * answer.
+ */
+export interface AnswerSection {
+  step: string;
+  end: number;
+}
+
 export interface HistoryEntry {
   id: string;
   role: "user" | "assistant" | "system" | "tool";
@@ -86,6 +99,8 @@ export interface HistoryEntry {
   created_at: number;
   /** Thinking and tool steps interleaved, exactly as they happened. */
   trace?: TraceStep[];
+  /** Step narration boundaries; empty when the workflow has no steps. */
+  sections?: AnswerSection[];
   error?: string | null;
   usage?: TurnUsage | null;
   steps?: number;

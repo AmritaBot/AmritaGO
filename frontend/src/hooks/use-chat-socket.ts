@@ -20,6 +20,7 @@ import { toast } from "sonner";
 
 import {
   api,
+  type AnswerSection,
   type ConfirmRequest,
   type InjectCapability,
   type QueuedPromptHandle,
@@ -68,6 +69,14 @@ export interface ChatMessage {
   events: { content: string; metadata: Record<string, unknown> }[];
   /** Thinking and tool steps interleaved, exactly as they arrived. */
   trace: TraceEntry[];
+  /**
+   * Where each step's narration ends in ``content``.
+   *
+   * Everything after the last boundary is the answer; the rest is folded by
+   * the bubble, because a step-driven workflow summarises the whole task at
+   * every step and the repetition buries the real answer.
+   */
+  sections?: AnswerSection[];
   streaming: boolean;
   error?: string;
   usage?: TurnUsage | null;
@@ -140,6 +149,25 @@ export interface QueuedPrompt {
   handle: QueuedPromptHandle | null;
 }
 
+/**
+ * Close the current step's narration at the end of ``content``.
+ *
+ * Mirrors the backend's rule exactly: a boundary is only worth recording when
+ * there is text in front of it, so a step that announced itself before saying
+ * anything does not create an empty row. The label is the step that was
+ * running while that text was written.
+ */
+function closeSection(
+  content: string,
+  sections: AnswerSection[] | undefined,
+  step: string,
+): AnswerSection[] {
+  const list = sections ?? [];
+  const start = list.length > 0 ? list[list.length - 1].end : 0;
+  if (!content.slice(start).trim()) return list;
+  return [...list, { step, end: content.length }];
+}
+
 export function useChatSocket(sessionId: string | null) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [connection, setConnection] = useState<ConnectionState>("closed");
@@ -182,6 +210,8 @@ export function useChatSocket(sessionId: string | null) {
   const mockTimers = useRef<number[]>([]);
   const activeIdRef = useRef<string | null>(null);
   const streamIdRef = useRef<string | null>(null);
+  // The step whose narration is being written right now.
+  const currentStepRef = useRef("");
   const reconnectAttempt = useRef(0);
   const manualClose = useRef(false);
   const sessionRef = useRef<string | null>(sessionId);
@@ -365,6 +395,7 @@ export function useChatSocket(sessionId: string | null) {
           setRunningTools({});
           startedAtRef.current = Date.now();
           firstDeltaRef.current = null;
+          currentStepRef.current = "";
           // Rebuild replayed turns and remove a duplicate trailing user bubble.
           const id = activeIdRef.current;
           pendingRef.current = { text: "", reasoning: "" };
@@ -393,6 +424,7 @@ export function useChatSocket(sessionId: string | null) {
                     reasoning: "",
                     events: [],
                     trace: [],
+                    sections: [],
                     streaming: true,
                     error: undefined,
                   }
@@ -429,6 +461,12 @@ export function useChatSocket(sessionId: string | null) {
           flush();
           const id = activeIdRef.current;
           const payload = { content: event.content, metadata: event.metadata };
+          // A step boundary ends the narration written during the previous step.
+          const isStep = String(event.metadata.type ?? "").startsWith("step");
+          const closedStep = currentStepRef.current;
+          if (isStep) {
+            currentStepRef.current = String(event.metadata.extra_type ?? "");
+          }
           setMessages((prev) =>
             prev.map((message) =>
               message.id === id
@@ -443,6 +481,9 @@ export function useChatSocket(sessionId: string | null) {
                         metadata: event.metadata,
                       },
                     ],
+                    sections: isStep
+                      ? closeSection(message.content, message.sections, closedStep)
+                      : message.sections,
                   }
                 : message,
             ),
@@ -772,6 +813,7 @@ export function useChatSocket(sessionId: string | null) {
                 error: entry.error ?? undefined,
                 usage: entry.usage ?? null,
                 attachments: entry.attachments ?? [],
+                sections: entry.sections ?? [],
                 createdAt: entry.created_at,
               };
             }),

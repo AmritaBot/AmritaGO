@@ -66,6 +66,10 @@ class HistoryEntry(BaseModel):
     content: str
     created_at: float = Field(default_factory=time.time)
     trace: list[dict[str, Any]] = Field(default_factory=list)
+    # ``{"step": name, "end": offset}``: where each step's narration ends.
+    # Everything after the last boundary is the answer; the rest is folded by
+    # the UI instead of being read as a second, contradictory answer.
+    sections: list[dict[str, Any]] = Field(default_factory=list)
     error: str | None = None
     usage: TurnUsage | None = None
     steps: int = 0

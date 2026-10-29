@@ -383,11 +383,7 @@ def _tool_pair(kind: ShellKind, plugin_name: str) -> list[ToolData]:
 
         try:
             raw_timeout = data.get(_TIMEOUT_ARG)
-            timeout = (
-                float(raw_timeout)
-                if raw_timeout is not None
-                else config.default_timeout
-            )
+            timeout = float(raw_timeout) if raw_timeout is not None else config.default_timeout
         except (TypeError, ValueError):
             timeout = config.default_timeout
         # Non-positive means no deadline at all; a positive cap still bounds it.
@@ -429,9 +425,7 @@ def _tool_pair(kind: ShellKind, plugin_name: str) -> list[ToolData]:
         )
         exe = configured or "(PATH)"
         flavour = _flavour_for(kind, config)
-        default_text = (
-            "none" if config.default_timeout <= 0 else f"{config.default_timeout:g}s"
-        )
+        default_text = "none" if config.default_timeout <= 0 else f"{config.default_timeout:g}s"
         cap_text = "none" if config.max_timeout <= 0 else f"{config.max_timeout:g}s"
         lines = [
             f"shell: {kind}",
