@@ -59,6 +59,16 @@ class AppSettings(BaseModel):
     first. Time spent parked on a confirmation prompt does **not** count — the
     clock is restarted when the user answers, because approval has no deadline.
     """
+    context_message_limit: int = Field(default=200, ge=-1)
+    """How many messages the model context may hold, counted, not tokenized.
+
+    Applied to AmritaCore's ``llm.memory_length_limit`` on each run's config
+    copy, so the history is measured against this number before every request:
+    ``compact`` folds the oldest prefix once the history reaches it, ``slide``
+    trims down to it. ``-1`` (or ``0``) removes the ceiling and leaves only the
+    token trigger, which needs the provider to report usage — a gateway that
+    reports none then never manages history at all.
+    """
     legacy_presets_imported: bool = False
     """``presets/*.json`` imported once; set to ``false`` to re-run the import."""
     updated_at: float = Field(default_factory=time.time)

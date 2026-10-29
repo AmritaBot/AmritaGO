@@ -152,6 +152,8 @@ class SettingsUpdate(BaseModel):
     tool_limit_timeout: float | None = Field(default=None, ge=1)
     # Wall-clock limit for one tool call; ``-1`` or ``0`` disables it.
     tool_timeout: float | None = Field(default=None, ge=-1)
+    # Messages kept in the model context; ``-1`` or ``0`` removes the ceiling.
+    context_message_limit: int | None = Field(default=None, ge=-1)
 
 
 class ModelPayload(BaseModel):

@@ -37,7 +37,7 @@ import {
   useChatSocket as useChatSocketFor,
 } from "@/hooks/use-chat-socket";
 import { api } from "@/lib/api";
-import type { ModelOption, RunningTool } from "@/lib/api";
+import type { ModelOption, RunningTool, StopMode } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 
@@ -861,7 +861,7 @@ export function ChatView({
   };
 
   /** One send path for the composer and the starters, so both behave alike. */
-  const submit = (text: string) => {
+  const submit = (text: string, mode?: StopMode) => {
     const files = pending.map((item) => ({
       id: item.id,
       kind: item.kind,
@@ -870,11 +870,11 @@ export function ChatView({
       path: item.path ?? null,
     }));
     if (busy) {
-      // Queue for the next turn and stop the current one; a second press escalates the stop.
+      // Queue for the next turn and end this one; the composer picks the mode.
       const queued = offerPrompt(
         text,
         files,
-        stopping ? "immediate" : "graceful",
+        mode ?? (stopping ? "immediate" : "graceful"),
       );
       if (!queued) {
         toast.error("连接已断开，无法排队；请等本轮结束后再发送");

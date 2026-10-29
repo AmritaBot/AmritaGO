@@ -62,6 +62,9 @@ export function BehaviourPanel({
   const [toolTimeout, setToolTimeout] = useState(
     text(settings.tool_timeout, 600),
   );
+  const [contextLimit, setContextLimit] = useState(
+    text(settings.context_message_limit, 200),
+  );
   const [saving, setSaving] = useState(false);
 
   const save = async (patch: Partial<AppSettings>) => {
@@ -73,6 +76,7 @@ export function BehaviourPanel({
       setRefusalRequests(text(saved.tool_limit_refusal_rounds, 5));
       setTimeoutValue(text(saved.tool_limit_timeout, 300));
       setToolTimeout(text(saved.tool_timeout, 600));
+      setContextLimit(text(saved.context_message_limit, 200));
       toast.success("已保存");
     } catch (error) {
       toast.error(`保存失败：${String(error).replace(/^Error:\s*/, "")}`);
@@ -276,6 +280,54 @@ export function BehaviourPanel({
         <p className="text-xs text-muted-foreground">
           运行中的工具调用可以在对话里的那一行直接「取消」，并填写原因；
           原因会作为工具结果交给模型，它可以用别的方式继续。
+        </p>
+      </section>
+
+      <section className="flex flex-col gap-3 rounded-lg border border-border p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-sm font-medium">上下文</h3>
+          <InfoHint label="上下文消息条数说明">
+            进入模型上下文的<strong>消息条数</strong>上限（不是 token）：每次请求前，
+            历史达到这个条数就会触发上下文管理 ——{" "}
+            <code>compact</code> 把较早的部分折叠成摘要，<code>slide</code>{" "}
+            直接丢弃最早的消息。工具调用与工具结果也算条数，所以一轮里调用越多，消耗得越快。
+            填 <code>-1</code>（或 <code>0</code>）表示<strong>不按条数限制</strong>，
+            只保留 token 阈值；token 阈值依赖服务商回报用量，不回报用量的网关就只能靠这个条数。
+          </InfoHint>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-4">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="context-limit">消息条数上限</Label>
+            <Input
+              id="context-limit"
+              type="number"
+              min={-1}
+              value={contextLimit}
+              disabled={saving}
+              onChange={(event) => setContextLimit(event.target.value)}
+              className="w-32"
+            />
+          </div>
+          <Button
+            disabled={saving}
+            onClick={() => {
+              const parsed = parseAll([contextLimit]);
+              if (!parsed) {
+                toast.error("请填写有效的数字");
+                return;
+              }
+              void save({ context_message_limit: parsed[0] });
+            }}
+          >
+            保存
+          </Button>
+        </div>
+
+        <p className="text-xs text-muted-foreground">
+          对应 AmritaCore 的 <code>llm.memory_length_limit</code>，这里设置的值会在每次运行时覆盖核心配置。
+          是否真的裁剪还取决于「核心配置 → 模型请求 → 上下文超限策略」：选{" "}
+          <code>none</code> 时历史不受任何限制，只由服务商报错。
         </p>
       </section>
     </div>

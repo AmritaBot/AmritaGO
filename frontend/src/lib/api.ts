@@ -134,6 +134,8 @@ export interface AppSettings {
   tool_limit_timeout: number;
   /** Wall-clock limit for one tool call, in seconds; `-1` (or `0`) disables it. */
   tool_timeout: number;
+  /** Messages the model context may hold; `-1` (or `0`) removes the ceiling. */
+  context_message_limit: number;
   updated_at: number;
 }
 

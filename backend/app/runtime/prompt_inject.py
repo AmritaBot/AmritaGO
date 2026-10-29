@@ -10,6 +10,11 @@ Two ways to end a turn, and the difference is *where* it ends.
     fact rather than a guess, and nothing is thrown away: the workflow still
     runs its normal wind-down and commits the context.
 
+    A tool call in flight keeps the interpreter inside the round, so the point
+    is never reached. Rather than give up and kill the turn, the running calls
+    of *this session* are cancelled: the round then finishes on its own and the
+    loop parks normally, which is what keeps the context intact.
+
 ``immediate``
     Cancel the turn task. Works for every workflow, including the ones that
     declare no suspend point, at the price of cutting whatever was in flight.
@@ -48,6 +53,12 @@ from app.runtime.tool_gate import TOOLS
 
 # Escalate a graceful stop to immediate after this wait if no suspend point is reached.
 DEFAULT_GRACEFUL_TIMEOUT = 10.0
+
+# Handed to the model when a call is cut short; ``tool_gate`` already prefixes "已取消".
+GRACEFUL_TOOL_NOTICE = (
+    "用户要求本轮在下一个安全点结束，正在执行的工具调用被中断。"
+    "请基于已有信息继续，不要重复这项工作。"
+)
 
 
 class StopMode(str, Enum):
@@ -349,29 +360,17 @@ class TurnInjector:
 
         channel.stop_mode = StopMode.GRACEFUL
         started = time.time()
-        waiter = asyncio.create_task(stream.wait_to_suspend(*tags, timeout=self._timeout))
-        self._waiter = waiter
-        parked = False
-        try:
-            await asyncio.wait({waiter})
-            error = None if waiter.cancelled() else waiter.exception()
-            if error is None and not waiter.cancelled():
-                parked = True
-                # Set before resuming because single_execute reads this as soon as execution continues.
-                channel.stop_requested = True
-            else:
+        parked = await self._await_park(self._arm(stream, tags), stream)
+        if not parked and not channel.finished:
+            waiter = self._arm(stream, tags)
+            cancelled = TOOLS.cancel_session(self._session_id, GRACEFUL_TOOL_NOTICE)
+            if cancelled:
                 logger.info(
-                    f"Graceful stop did not park ({type(error).__name__ if error else 'cancelled'});"
-                    " escalating to an immediate stop"
+                    f"Graceful stop cancelled {cancelled} running tool call(s) to reach a boundary"
                 )
-        finally:
-            self._waiter = None
-            if not waiter.done():
-                waiter.cancel()
-                with suppress(asyncio.CancelledError, Exception):
-                    await asyncio.wait({waiter})
-            # Always resume because a timed-out wait may leave the producer parked without a resume future.
-            stream.resume()
+                parked = await self._await_park(waiter, stream)
+            else:
+                await self._release(waiter, stream)
 
         latency = time.time() - started
         if channel.stop_mode is StopMode.IMMEDIATE:
@@ -379,9 +378,45 @@ class TurnInjector:
             return StopResult(
                 accepted=True, mode=StopMode.IMMEDIATE, reason="superseded", latency=latency
             )
-        if not parked:
-            return await self._immediate(reason="graceful_timeout")
-        return StopResult(accepted=True, mode=StopMode.GRACEFUL, parked=True, latency=latency)
+        if parked:
+            return StopResult(accepted=True, mode=StopMode.GRACEFUL, parked=True, latency=latency)
+        if channel.finished:
+            return StopResult(
+                accepted=True, mode=StopMode.GRACEFUL, reason="turn_finished", latency=latency
+            )
+        return await self._immediate(reason="graceful_timeout")
+
+    def _arm(self, stream: Any, tags: tuple[str, ...]) -> asyncio.Task[None]:
+        """Ask the producer to stop at one of ``tags`` and keep the wait reachable."""
+        waiter = asyncio.create_task(stream.wait_to_suspend(*tags, timeout=self._timeout))
+        self._waiter = waiter
+        return waiter
+
+    async def _await_park(self, waiter: asyncio.Task[None], stream: Any) -> bool:
+        """Whether the armed suspension was reached; always releases the stream."""
+        try:
+            await asyncio.wait({waiter})
+            error = None if waiter.cancelled() else waiter.exception()
+            if error is None and not waiter.cancelled():
+                # Set before resuming: single_execute reads this as soon as execution continues.
+                self._channel.stop_requested = True
+                return True
+            logger.info(
+                f"Graceful stop did not park ({type(error).__name__ if error else 'cancelled'});"
+                " escalating"
+            )
+            return False
+        finally:
+            await self._release(waiter, stream)
+
+    async def _release(self, waiter: asyncio.Task[None], stream: Any) -> None:
+        self._waiter = None
+        if not waiter.done():
+            waiter.cancel()
+            with suppress(asyncio.CancelledError, Exception):
+                await asyncio.wait({waiter})
+        # Always resume because a timed-out wait may leave the producer parked without a resume future.
+        stream.resume()
 
 
 __all__ = [

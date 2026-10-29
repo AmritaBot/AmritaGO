@@ -36,6 +36,7 @@ import {
   SquareIcon,
   TerminalIcon,
   XIcon,
+  ZapIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -198,7 +199,12 @@ export function Composer({
   allowedPermissions?: Permission[];
   attachments: PendingAttachment[];
   guard: GuardState;
-  onSend: (text: string) => void;
+  /**
+   * Send text. While a turn runs the text is queued for the next turn, and
+   * *mode* says how the running turn should end: ``graceful`` waits for the
+   * declared boundary, ``immediate`` cuts it now.
+   */
+  onSend: (text: string, mode?: StopMode) => void;
   onStop: (mode: StopMode) => void;
   onRevoke: () => void;
   onAttach: (files: File[]) => void;
@@ -308,18 +314,26 @@ export function Composer({
 
   // While busy, the primary button queues this draft for the next turn.
   const hasInput = draft.trim().length > 0 || attachments.length > 0;
+  // ``graceful`` is a real choice only when the workflow declared a boundary.
+  const graceful = Boolean(inject?.graceful);
+  const boundary = inject?.boundary || "下一个安全点";
   const offerMode: StopMode = stopping ? "immediate" : "graceful";
+
+  /** Queue the draft for the next turn, ending this one in *mode*. */
+  const offer = (mode: StopMode) => {
+    if (slashQuery !== null && filteredCommands.length > 0) {
+      runCommand(filteredCommands[commandIndex]);
+      return;
+    }
+    if (!hasInput) return;
+    onSend(draft, mode);
+    setDraft("");
+  };
 
   const submit = () => {
     if (busy) {
       // The parent routes this to the queue; it knows the workflow capability.
-      if (slashQuery !== null && filteredCommands.length > 0) {
-        runCommand(filteredCommands[commandIndex]);
-        return;
-      }
-      if (!hasInput) return;
-      onSend(draft);
-      setDraft("");
+      offer(graceful ? "graceful" : "immediate");
       return;
     }
     // Handle slash commands before model guards so /help works without a model.
@@ -537,6 +551,17 @@ export function Composer({
             >
               下一轮：{pendingPrompt.content}
             </span>
+            {busy && (
+              <button
+                type="button"
+                onClick={() => onStop("immediate")}
+                className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent"
+                aria-label="立即插入这条消息"
+                title="立即插入：中断本轮，马上发送"
+              >
+                <ZapIcon className="size-3" />
+              </button>
+            )}
             <button
               type="button"
               onClick={onRevoke}
@@ -717,13 +742,14 @@ export function Composer({
               size="icon"
               className="size-8 rounded-full max-sm:size-10"
               onClick={busy && !hasInput ? () => onStop(offerMode) : submit}
-              disabled={(!busy && !canSend) || (Boolean(stopping) && !hasInput)}
+              // While stopping, the force button below is the escape hatch.
+              disabled={(!busy && !canSend) || Boolean(stopping)}
               aria-label={
                 busy
                   ? hasInput
-                    ? stopping
-                      ? "立即发送"
-                      : "停止并发送"
+                    ? graceful
+                      ? "本轮结束后发送"
+                      : "立即结束本轮并发送"
                     : stopping
                       ? "正在停止"
                       : "停止生成"
@@ -732,11 +758,9 @@ export function Composer({
               title={
                 busy
                   ? hasInput
-                    ? stopping
-                      ? "立即结束本轮并发送"
-                      : inject?.graceful
-                        ? `本轮结束后发送（会在「${inject.boundary || "下一个安全点"}」停止）`
-                        : "立即结束本轮并发送"
+                    ? graceful
+                      ? `本轮结束后发送（会在「${boundary}」停止）`
+                      : "立即结束本轮并发送"
                     : "停止本轮"
                   : "发送"
               }
@@ -753,6 +777,18 @@ export function Composer({
                 <ArrowUpIcon className="size-4" />
               )}
             </Button>
+            {busy && hasInput && graceful && (
+              <Button
+                size="icon"
+                variant="outline"
+                className="size-8 rounded-full max-sm:size-10"
+                onClick={() => offer("immediate")}
+                aria-label="立即插入"
+                title="立即插入：中断本轮，马上发送（不等安全点）"
+              >
+                <ZapIcon className="size-3.5" />
+              </Button>
+            )}
           </div>
         </div>
 
@@ -761,10 +797,10 @@ export function Composer({
             <InfoIcon className="mt-0.5 size-3 shrink-0" />
             <span className="min-w-0 flex-1">
               {stopping
-                ? "正在等待本轮结束…再次点击可直接结束"
+                ? "正在等待本轮结束…闪电按钮可立即中断并发送"
                 : inject.graceful
-                  ? `输入内容可排队到下一轮；停止会等到「${inject.boundary || "下一个安全点"}」`
-                  : "这个工作流没有安全停止点，停止会立即结束本轮"}
+                  ? `发送会排队到下一轮，本轮在「${boundary}」结束；闪电按钮立即中断并发送`
+                  : "这个工作流没有安全停止点，发送会立即结束本轮"}
             </span>
           </div>
         )}

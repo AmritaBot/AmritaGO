@@ -62,20 +62,25 @@ def for_run(config: AmritaConfig | None = None) -> AmritaConfig:
     ``ChatObject`` falls back to the process-wide config; passing a copy keeps
     ``function_config.agent_tool_call_limit`` private to the run that changed it.
 
-    The refusal-request budget is folded in here as well, because it is a *user*
-    setting (设置 -> 行为) covering what a cut-off run may still do — AmritaCore
-    reads it off the config, and the app-level knob would otherwise be ignored.
+    The refusal-request budget and the context message ceiling are folded in
+    here as well, because both are *user* settings (设置 -> 行为) — AmritaCore
+    reads them off the config, and the app-level knobs would otherwise be
+    ignored. ``context_message_limit`` lands on ``llm.memory_length_limit``,
+    which is the count trigger for history management; a non-positive value
+    means "no ceiling" and is spelled ``0`` for Core.
     """
 
     from app.core.settings import load_settings_sync
 
     copy = (config or get_config()).model_copy(deep=True)
     try:
-        copy.function_config.agent_tool_refusal_rounds = int(
-            load_settings_sync().tool_limit_refusal_rounds
-        )
+        settings = load_settings_sync()
     except (OSError, ValueError):  # pragma: no cover - unreadable settings file
-        pass
+        return copy
+    copy.function_config.agent_tool_refusal_rounds = int(
+        settings.tool_limit_refusal_rounds
+    )
+    copy.llm.memory_length_limit = max(0, int(settings.context_message_limit))
     return copy
 
 

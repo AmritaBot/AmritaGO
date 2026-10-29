@@ -28,7 +28,7 @@ from amrita_core.contexts import AbilityContext, DatabackendOptions
 from amrita_core.preset import MultiPresetManager
 from amrita_core.tools.manager import MultiToolsManager
 from amrita_core.tools.mcp import MultiClientManager
-from amrita_core.types import MemoryModel, Message, ModelPreset
+from amrita_core.types import Function, MemoryModel, Message, ModelPreset, ToolCall, ToolResult
 from amrita_core.types.preset import resolve_max_context
 from amrita_sense.logging import logger
 
@@ -86,6 +86,8 @@ class TurnDraft:
     last_delta_at: float | None = None
     # The assistant entry is already in ``history.jsonl``.
     history_written: bool = False
+    # The turn's messages are already in ``context.json``.
+    context_written: bool = False
     # The run reached its normal end, ``COMMIT_MEMORY`` included.
     committed: bool = False
     # Ended by a user stop rather than by the model finishing.
@@ -155,6 +157,8 @@ async def _commit_interrupted(
     The check is on content, not on a flag: a turn can be cancelled *after* the
     workflow committed, and appending again would duplicate it.
     """
+    if draft.context_written:
+        return
     memory = await load_context(draft.session_id)
     messages = memory.messages
     answer = draft.answer_text
@@ -170,7 +174,73 @@ async def _commit_interrupted(
         )
         if answer:
             messages.append(Message(role="assistant", content=answer))
+    # A cancelled turn loses the tool rounds it already paid for; replay them.
+    messages.extend(_tool_exchanges(draft.trace))
+    draft.context_written = True
     await save_context(draft.session_id, memory)
+
+
+def _tool_exchanges(trace: list[dict[str, Any]]) -> list[Any]:
+    """Rebuild the finished tool rounds of a cut-off turn.
+
+    An immediate stop closes the generator before ``COMMIT_MEMORY``, so every
+    result the turn collected would be dropped and the next turn would start
+    the same probing over again — the exact opposite of what the user asked for
+    when they interrupted to *add* information. The transcript already holds
+    them, so they are replayed in the shape ``COMMIT_MEMORY`` would have
+    written: an ``assistant`` message carrying ``tool_calls`` followed by the
+    matching ``tool`` result (providers reject an orphaned tool message).
+
+    A call with no result never returned; inventing one would put words in the
+    model's mouth, so it is skipped and the next turn knows nothing about it.
+    """
+    slots: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for entry in trace:
+        metadata = entry.get("metadata") or {}
+        if metadata.get("type") != "function_call":
+            continue
+        tool_id = str(metadata.get("tool_id") or "")
+        if not tool_id:
+            continue
+        if tool_id not in slots:
+            order.append(tool_id)
+        slot = slots.setdefault(tool_id, {})
+        name = metadata.get("function_name")
+        if isinstance(name, str) and name:
+            slot["name"] = name
+        arguments = metadata.get("arguments")
+        if isinstance(arguments, str) and arguments:
+            slot["arguments"] = arguments
+        result = metadata.get("result")
+        if isinstance(result, str):
+            slot["result"] = result
+
+    rebuilt: list[Any] = []
+    for tool_id in order:
+        slot = slots[tool_id]
+        result = slot.get("result")
+        if result is None:
+            continue
+        name = str(slot.get("name") or "tool")
+        rebuilt.append(
+            Message(
+                role="assistant",
+                content=None,
+                tool_calls=[
+                    ToolCall(
+                        id=tool_id,
+                        function=Function(
+                            name=name, arguments=str(slot.get("arguments") or "{}")
+                        ),
+                    )
+                ],
+            )
+        )
+        rebuilt.append(
+            ToolResult(role="tool", name=name, content=result, tool_call_id=tool_id)
+        )
+    return rebuilt
 
 
 class SessionMemoryBackend(MemoryBackend):
