@@ -10,7 +10,7 @@ from __future__ import annotations
 import fnmatch
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from amrita_core.tools.manager import MultiToolsManager
 from amrita_core.tools.mcp import MCPClient, MultiClientManager
@@ -20,8 +20,13 @@ from amrita_sense.logging import logger
 from app.capabilities.mcp_runtime import RUNTIME as MCP
 from app.capabilities.permissions import ACCESS_MODES, narrow, tool_allowed_for_mode
 from app.capabilities.skills import SkillInfo, discover_skills_sync
-from app.plugins import PLUGINS, MCPDeclaration
-from app.runtime.workflows import WORKFLOWS
+from app.plugins import PLUGINS, MCPDeclaration, PluginInfo
+from app.runtime.workflows import WORKFLOWS, WorkflowSpec
+
+# Deferred type imports avoid a cycle through ``app.agents.permissions``.
+if TYPE_CHECKING:
+    from app.agents import AgentPreset
+    from app.core.settings import AppSettings
 
 
 @dataclass(frozen=True)
@@ -44,8 +49,8 @@ class MCPSource:
 
 @dataclass(frozen=True)
 class ToolBuildContext:
-    settings: Any
-    agent: Any
+    settings: AppSettings
+    agent: AgentPreset | None
     skills: tuple[SkillInfo, ...] = ()
     mcp: tuple[MCPSource, ...] = ()
     access_mode: str = "workspace"
@@ -62,26 +67,29 @@ class ToolRunContext(ToolContext):
     to ask for confirmation, or enforce the access mode.
     """
 
-    settings: Any = None
+    settings: AppSettings
     session_id: str = ""
     access_mode: str = "workspace"
 
 
 def _bind_run_context(
     tool: ToolData,
-    settings: Any,
+    settings: AppSettings,
     session_id: str | None,
     access_mode: str,
 ) -> ToolData:
     """Attach the run's settings, session and access mode to what a tool receives."""
     if not tool.custom_run:
         return tool
-    inner = cast(Callable[[Any], Awaitable[str | None]], tool.func)
+    # ``custom_run`` selects the context-style signature from Core's function union.
+    context_func = cast(Callable[[ToolContext], Awaitable[str | None]], tool.func)
+    dict_func = cast(Callable[[dict[str, Any]], Awaitable[str]], tool.func)
 
-    async def bound(raw: Any) -> str | None:
+    async def bound(raw: ToolContext | dict[str, Any]) -> str | None:
+        # Forward dict inputs unchanged if Core's ``custom_run`` contract changes.
         if not isinstance(raw, ToolContext):
-            return await inner(raw)
-        return await inner(
+            return await dict_func(raw)
+        return await context_func(
             ToolRunContext(
                 data=raw.data,
                 ctx=raw.ctx,
@@ -96,8 +104,8 @@ def _bind_run_context(
 
 @dataclass
 class CapabilityCatalog:
-    settings: Any
-    agent: Any = None
+    settings: AppSettings
+    agent: AgentPreset | None = None
     skills: tuple[SkillInfo, ...] = ()
     mcp: tuple[MCPSource, ...] = ()
     # Effective access mode for this run (readonly / workspace / full).
@@ -108,8 +116,8 @@ class CapabilityCatalog:
     @classmethod
     async def collect(
         cls,
-        settings: Any,
-        agent: Any = None,
+        settings: AppSettings,
+        agent: AgentPreset | None = None,
         requested_access: str | None = None,
         session_id: str | None = None,
     ) -> CapabilityCatalog:
@@ -120,7 +128,7 @@ class CapabilityCatalog:
         — plugin tools, MCP tools, the shell — sees the same decision.
         """
         access_mode = narrow(
-            getattr(agent, "access", None) if agent is not None else None,
+            agent.access if agent is not None else None,
             requested_access,
         )
         skills = tuple(await _discover_skills())
@@ -146,7 +154,7 @@ class CapabilityCatalog:
 
     def allowed_mcp(self) -> list[MCPSource]:
         settings = self.settings
-        globally_enabled = set(getattr(settings, "enabled_mcp", []) or [])
+        globally_enabled = set(settings.enabled_mcp or [])
         out: list[MCPSource] = []
         for source in self.mcp:
             if not source.enabled:
@@ -280,7 +288,7 @@ class CapabilityCatalog:
             "enabled": not tool_disabled(self.settings, name),
             # The active preset's ``tools`` whitelist does not admit it.
             "preset_allowed": agent.tool_allowed(name) if agent is not None else True,
-            "preset_pinned": bool(getattr(agent, "tools", None) is not None),
+            "preset_pinned": bool(agent is not None and agent.tools is not None),
             # The current access mode alone would refuse it.
             "mode_allowed": tool_allowed_for_mode(name, self.access_mode),
         }
@@ -360,8 +368,8 @@ class CapabilityCatalog:
             "disabled": [item["name"] for item in catalog if not item["enabled"]],
             "disabled_patterns": disabled_tools(self.settings),
             "access_mode": self.access_mode,
-            "agent": getattr(self.agent, "name", None),
-            "preset_pinned": bool(getattr(self.agent, "tools", None) is not None),
+            "agent": self.agent.name if self.agent is not None else None,
+            "preset_pinned": bool(self.agent is not None and self.agent.tools is not None),
         }
 
     def tool_count(self) -> int:
@@ -372,10 +380,10 @@ class CapabilityCatalog:
         manager = self.build_tools()
         return sorted(name for name in manager._models if manager.has_tool(name))
 
-    def effective_workflow(self) -> Any:
+    def effective_workflow(self) -> WorkflowSpec:
         """The workflow this run will execute: preset first, else the global one."""
-        agent_workflow = getattr(self.agent, "workflow", None) if self.agent else None
-        return WORKFLOWS.require(agent_workflow or getattr(self.settings, "active_workflow", None))
+        agent_workflow = self.agent.workflow if self.agent is not None else None
+        return WORKFLOWS.require(agent_workflow or self.settings.active_workflow)
 
     def to_public(self) -> dict[str, Any]:
         workflow = self.effective_workflow()
@@ -386,11 +394,11 @@ class CapabilityCatalog:
             "allowed_mcp": [source.name for source in self.allowed_mcp()],
             "access_mode": self.access_mode,
             "access_modes": list(ACCESS_MODES),
-            "declared_access": getattr(self.agent, "access", None) if self.agent else None,
+            "declared_access": self.agent.access if self.agent is not None else None,
             "workflow": workflow.name,
             "workflow_mode": workflow.mode,
             "workflow_mode_label": workflow.mode_label,
-            "workflow_pinned": bool(getattr(self.agent, "workflow", None) is not None),
+            "workflow_pinned": bool(self.agent is not None and self.agent.workflow is not None),
             "workflows": [spec.to_public() for spec in WORKFLOWS.list()],
             "plugins": [info.to_public() for info in PLUGINS.snapshot.plugins],
         }
@@ -442,11 +450,11 @@ def matches(name: str, patterns: list[str] | None) -> bool:
     return any(fnmatch.fnmatchcase(name, pattern) for pattern in patterns)
 
 
-def disabled_tools(settings: Any) -> list[str]:
-    return list(getattr(settings, "disabled_tools", None) or [])
+def disabled_tools(settings: AppSettings) -> list[str]:
+    return list(settings.disabled_tools or [])
 
 
-def tool_disabled(settings: Any, name: str) -> bool:
+def tool_disabled(settings: AppSettings, name: str) -> bool:
     """Is this tool switched off for every conversation?
 
     Globs are accepted (``mcp_*``) because the catalog is derived from plugins
@@ -467,9 +475,9 @@ _SOURCE_LABELS = {
 }
 
 
-def _source_plugin_map() -> dict[str, Any]:
+def _source_plugin_map() -> dict[str, PluginInfo]:
     """tool source name -> the plugin that declared it (if any)."""
-    out: dict[str, Any] = {}
+    out: dict[str, PluginInfo] = {}
     for plugin in PLUGINS.snapshot.plugins:
         for tool_source in plugin.tools:
             out.setdefault(tool_source, plugin)
@@ -477,8 +485,8 @@ def _source_plugin_map() -> dict[str, Any]:
 
 
 async def catalog_for(
-    settings: Any,
-    agent: Any = None,
+    settings: AppSettings,
+    agent: AgentPreset | None = None,
     requested_access: str | None = None,
     session_id: str | None = None,
 ) -> CapabilityCatalog:

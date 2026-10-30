@@ -196,6 +196,11 @@ def core_tool_data() -> list[ToolData]:
     ``get_tools`` runs each tool's ``enable_if`` predicate, which reads the
     global config; before ``minimal_init`` that raises, so fall back to the raw
     registry in that case.
+
+    The schemas are passed through untouched. What a tool *means* is the
+    provider's contract, and rewriting its description would make the prompt
+    disagree with the registry for every other consumer. Guidance for how the
+    agent should use a tool belongs in the system prompt.
     """
     try:
         global_tools = ToolsManager().get_tools()

@@ -435,12 +435,18 @@ async def probe_models(
     api_key: str,
     protocol: str = "openai",
     timeout: float = 12.0,
+    extra_headers: dict[str, str] | None = None,
 ) -> ProbeResult:
     """Ask the endpoint which models it serves.
 
     A provider that does not implement ``/models`` is not broken — plenty of
     OpenAI-compatible gateways skip it — so a failure returns ``ok=False`` with
     the reason and the form stays usable for manual entry.
+
+    ``extra_headers`` are the ones stored next to the key. A gateway that wants
+    ``api-key: …`` instead of ``Authorization`` (Azure-style) or a project id
+    rejects an unauthenticated probe with 401, so the probe must send exactly
+    what a real request would.
     """
     base = base_url.rstrip("/")
     if not base:
@@ -454,6 +460,9 @@ async def probe_models(
     else:
         url = f"{base}/models" if base.endswith("/v1") else f"{base}/v1/models"
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    if extra_headers:
+        # Saved extras win: they are what the user configured for this gateway.
+        headers.update(extra_headers)
 
     started = time.monotonic()
     try:

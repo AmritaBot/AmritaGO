@@ -108,26 +108,36 @@ export function ProviderPanel({
   const [selected, setSelected] = useState<string | null>(
     providers[0]?.id ?? null,
   );
+  // Keep auto-select from replacing the blank form; initial load still selects the first provider.
+  const [creating, setCreating] = useState(false);
   // The delete button only opens the dialog; nothing is destroyed on one click.
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
+    if (creating) return;
     if (selected === null && providers.length > 0) setSelected(providers[0].id);
-  }, [providers, selected]);
+  }, [providers, selected, creating]);
 
-  const provider = providers.find((item) => item.id === selected) ?? null;
+  const provider = creating
+    ? null
+    : (providers.find((item) => item.id === selected) ?? null);
 
   const reload = useCallback(() => {
     onReload();
   }, [onReload]);
 
   const probe = async () => {
+    // Probing needs a saved provider so its server-side key stays out of the browser.
+    if (!draft.id) {
+      toast.error("先保存 Provider，再嗅探模型");
+      return;
+    }
     setProbing(true);
     setProbeError(null);
     try {
       const result = await api.probeProvider(
-        draft.base_url,
-        draft.api_key || "",
+        draft.id,
+        draft.base_url || undefined,
         draft.protocol,
       );
       if (!result.ok) {
@@ -137,7 +147,7 @@ export function ProviderPanel({
       }
       setProbed(result.models);
       if (result.models.length === 0) {
-        setProbeError("接口返回了空列表；可以手动填写模型 ID。");
+        setProbeError("接口返回空列表，可手动填写模型 ID。");
       } else {
         toast.success(
           `发现 ${result.models.length} 个模型${result.latency_ms ? `（${result.latency_ms} ms）` : ""}`,
@@ -174,6 +184,8 @@ export function ProviderPanel({
       });
       setDraft(providerToDraft(saved));
       setSelected(saved.id);
+      // Leaving the create mode here is what makes the saved provider the form's subject.
+      setCreating(false);
       reload();
       toast.success("Provider 已保存，密钥已加密存储");
     } catch (error) {
@@ -219,6 +231,8 @@ export function ProviderPanel({
       await api.deleteProvider(selected);
       setSelected(null);
       setDraft(EMPTY_DRAFT);
+      // Keep auto-select from binding this blank draft to a surviving provider.
+      setCreating(true);
       reload();
     } catch (error) {
       toast.error(String(error).replace(/^Error:\s*/, ""));
@@ -243,6 +257,7 @@ export function ProviderPanel({
             key={item.id}
             type="button"
             onClick={() => {
+              setCreating(false);
               setSelected(item.id);
               setDraft(providerToDraft(item));
               setProbed([]);
@@ -272,6 +287,7 @@ export function ProviderPanel({
           size="sm"
           className="mt-1"
           onClick={() => {
+            setCreating(true);
             setSelected(null);
             setDraft(EMPTY_DRAFT);
             setProbed([]);
@@ -361,7 +377,9 @@ export function ProviderPanel({
             size="sm"
             variant="outline"
             onClick={probe}
-            disabled={probing}
+            // Probe only after saving; credentials stay server-side.
+            disabled={probing || !draft.id}
+            title={draft.id ? "读取端点提供的模型列表" : "先保存 Provider"}
           >
             {probing ? (
               <Loader2Icon className="size-3.5 animate-spin" />
@@ -406,10 +424,8 @@ export function ProviderPanel({
         )}
 
         {provider && !provider.has_api_key && (
-          <p className="rounded-md border border-amber-500/40 bg-amber-500/5 px-2.5 py-1.5 text-[11px] leading-relaxed text-amber-700 dark:text-amber-400">
-            这个 Provider 没有保存 API
-            Key。本地推理服务、内网网关、带额外认证头的部署
-            常常不需要密钥，所以这里只是提醒、不会阻止发送；请求会以无认证头的方式发出。
+          <p className="rounded-md border border-amber-500/40 bg-amber-500/5 px-2.5 py-1.5 text-[11px] text-amber-700 dark:text-amber-400">
+            未保存 API Key，请求将以无认证头发出。
           </p>
         )}
 
@@ -498,23 +514,18 @@ export function ProviderPanel({
             );
           })}
           {provider && provider.models.length === 0 && (
-            <p className="text-[11px] text-muted-foreground">
-              还没有模型。先保存 Provider，再用嗅探或下面的表单添加一个。
-            </p>
+            <p className="text-[11px] text-muted-foreground">还没有模型。</p>
           )}
 
           <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
             <span>原生思考按模型开关</span>
             <InfoHint label="原生思考说明">
-              模型自己产出推理过程。开启后请求会带上 <code>thinking</code>{" "}
-              参数， 服务商真实产生推理 token，按输出计费；同时会把强制的{" "}
-              <code>tool_choice</code> 降级为 <code>auto</code>。
+              请求带上 <code>thinking</code>，服务商真实产生推理 token 并计费，
+              同时把 <code>tool_choice</code> 降为 <code>auto</code>。
               <span className="text-amber-700 dark:text-amber-400">
-                模型不支持时可能直接报错
+                模型不支持会报错
               </span>
-              ，所以不确定就关掉。它和「核心配置」里的 reasoning
-              选项不是一回事：
-              后者只改提示词，任何模型都能用，两者同时开启会重复消耗输出预算。
+              。与「核心配置」里的 reasoning 无关。
             </InfoHint>
           </div>
 
@@ -589,7 +600,7 @@ export function ProviderPanel({
                   <Switch
                     id="m-thinking"
                     checked={modelDraft.thinking}
-                    title="向 Provider 请求它自己的思考通道；不支持该字段的模型可能直接报错"
+                    title="请求服务商的思考通道；不支持的模型会报错"
                     onCheckedChange={(value) =>
                       setModelDraft((prev) => ({ ...prev, thinking: value }))
                     }
@@ -627,9 +638,9 @@ export function ProviderPanel({
         title="删除这个 Provider？"
         description={
           <>
-            它的所有模型和已保存的密钥会一起删掉，无法恢复。
+            它的模型和已保存的密钥会一起删除，无法恢复。
             <br />
-            只是暂时不想用的话，把上面的「启用」关掉即可。
+            暂时不用的话，关掉「启用」即可。
           </>
         }
         confirmLabel="删除"

@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
-from typing import Any, cast
+from typing import Any
 
 from amrita_core.builtins.agent import ReActAgentStrategy
 from amrita_core.config import AmritaConfig, get_config
@@ -34,6 +34,23 @@ from app.runtime.audit import BROKER
 from app.runtime.limit_gate import LIMITS
 from app.runtime.stream_hub import HUB
 from app.runtime.tool_gate import CANCELLED_PREFIX, TIMEOUT_PREFIX, TOOLS
+
+
+class _ToolEventMetadata(MessageMetadataPayloadSystem, total=False):
+    """A ``function_call`` event with the payload Core leaves out.
+
+    ``MessageMetadataPayloadSystem`` declares only ``type``/``message``/
+    ``extra_type``; the fields below are what this app adds so the UI can show
+    arguments and results. Naming them keeps the dict literal checkable instead
+    of casting an untyped literal past pyright.
+    """
+
+    function_name: str
+    tool_id: str
+    is_done: bool
+    arguments: str
+    result: str
+
 
 # Fallback when ``settings.json`` cannot be read; matches the field default.
 DEFAULT_TOOL_TIMEOUT = 600.0
@@ -77,9 +94,7 @@ def for_run(config: AmritaConfig | None = None) -> AmritaConfig:
         settings = load_settings_sync()
     except (OSError, ValueError):  # pragma: no cover - unreadable settings file
         return copy
-    copy.function_config.agent_tool_refusal_rounds = int(
-        settings.tool_limit_refusal_rounds
-    )
+    copy.function_config.agent_tool_refusal_rounds = int(settings.tool_limit_refusal_rounds)
     copy.llm.memory_length_limit = max(0, int(settings.context_message_limit))
     return copy
 
@@ -318,19 +333,17 @@ class LimitAwareStrategy(ReActAgentStrategy):
         the row from 运行中 into 完成, so the closing event is the one carrying
         ``result``.
         """
-        metadata = cast(
-            MessageMetadataPayloadSystem,
-            {
-                "type": "function_call",
-                "message": "",
-                "extra_type": None,
-                "function_name": tool_call.function.name,
-                "tool_id": tool_call.id,
-                "is_done": result is not None,
-                "arguments": arguments,
-                **({} if result is None else {"result": result}),
-            },
-        )
+        metadata: _ToolEventMetadata = {
+            "type": "function_call",
+            "message": "",
+            "extra_type": None,
+            "function_name": tool_call.function.name,
+            "tool_id": tool_call.id,
+            "is_done": result is not None,
+            "arguments": arguments,
+        }
+        if result is not None:
+            metadata["result"] = result
         content = (
             f"Called tool {tool_call.function.name}\n"
             if result is not None
@@ -345,16 +358,13 @@ class LimitAwareStrategy(ReActAgentStrategy):
         cancel button can appear and disappear. *Why* a call ended is worth
         keeping, so it is emitted as a normal meta event that history stores.
         """
-        metadata = cast(
-            MessageMetadataPayloadSystem,
-            {
-                "type": "system",
-                "message": content,
-                "extra_type": extra_type,
-                "tool_id": tool_call.id,
-                "function_name": tool_call.function.name,
-            },
-        )
+        metadata: _ToolEventMetadata = {
+            "type": "system",
+            "message": content,
+            "extra_type": extra_type,
+            "tool_id": tool_call.id,
+            "function_name": tool_call.function.name,
+        }
         await self.io_stream.yield_response(MessageWithMetadata(content=content, metadata=metadata))
 
     async def _publish(self, event: dict[str, Any]) -> None:

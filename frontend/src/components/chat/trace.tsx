@@ -488,17 +488,19 @@ function NoticePill({
   const label =
     kind === "skill_call"
       ? `技能 ${String(metadata.skill_name ?? "")}`
-      : kind === "system" && extra === "tool_call_limit_extended"
-        ? "预算"
-        : extra === "tool_cancelled"
-          ? "取消"
-          : extra === "tool_timeout"
-            ? "超时"
-            : kind === "system"
-              ? "系统"
-              : kind && kind.startsWith("step")
-                ? `步骤 ${String(metadata.extra_type ?? "")}`
-                : "事件";
+      : kind === "middle_message"
+        ? "过程"
+        : kind === "system" && extra === "tool_call_limit_extended"
+          ? "预算"
+          : extra === "tool_cancelled"
+            ? "取消"
+            : extra === "tool_timeout"
+              ? "超时"
+              : kind === "system"
+                ? "系统"
+                : kind && kind.startsWith("step")
+                  ? `步骤 ${String(metadata.extra_type ?? "")}`
+                  : "事件";
   return (
     <div className="flex items-start gap-2 text-xs text-muted-foreground">
       <InfoIcon className="mt-0.5 size-3.5 shrink-0" />

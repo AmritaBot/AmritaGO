@@ -482,7 +482,11 @@ export function useChatSocket(sessionId: string | null) {
                       },
                     ],
                     sections: isStep
-                      ? closeSection(message.content, message.sections, closedStep)
+                      ? closeSection(
+                          message.content,
+                          message.sections,
+                          closedStep,
+                        )
                       : message.sections,
                   }
                 : message,
@@ -992,7 +996,7 @@ export function useChatSocket(sessionId: string | null) {
       if (isMockMode() || !socket || socket.readyState !== WebSocket.OPEN) {
         return false;
       }
-      // Draw it now: the server never echoes a queued prompt, and the bubble belongs at the moment it was sent.
+      // Draw queued prompts immediately; the server does not echo them.
       const bubbleId = crypto.randomUUID();
       // Offering again replaces the previous one, bubble included.
       const previous = queuedRef.current;

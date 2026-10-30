@@ -93,11 +93,10 @@ export function BehaviourPanel({
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-medium">工具预算用尽时</h3>
           <InfoHint>
-            你和 Agent 的一问一答算<strong>一轮</strong>
-            ；一轮里模型每发一次工具请求算
-            <strong>一次 LLM 请求</strong>。预算由 AmritaCore 的{" "}
-            <code>agent_tool_call_limit</code> 控制（核心配置 → 函数），按 LLM
-            请求次数计算， 这里只决定「用完之后怎么办」。
+            一问一答算<strong>一轮</strong>
+            ，模型每发一次工具请求算
+            <strong>一次 LLM 请求</strong>。预算由核心配置的{" "}
+            <code>agent_tool_call_limit</code> 决定，这里只决定用完之后怎么办。
           </InfoHint>
         </div>
         <div className="grid gap-2 sm:grid-cols-2">
@@ -106,14 +105,13 @@ export function BehaviourPanel({
               {
                 value: "graceful",
                 title: "优雅停机",
-                detail:
-                  "本轮结束，模型用已有信息收尾回答。不打断、不等待，适合无人值守；收尾还能发几次请求在下面设置。",
+                detail: "本轮结束，模型用已有信息收尾。不打断、不等待。",
               },
               {
                 value: "ask",
                 title: "挂起并询问",
                 detail:
-                  "先停住，问你要怎么办：继续迭代（在本轮内追加 LLM 请求次数，上下文不丢）、优雅收尾（不再调工具，用它已有的信息写完）或直接中断。不选或超时按优雅收尾处理。",
+                  "先停住，让你选继续迭代、优雅收尾或直接中断；不选按优雅收尾处理。",
               },
             ] as const
           ).map((option) => (
@@ -146,12 +144,10 @@ export function BehaviourPanel({
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="text-sm font-medium">请求数</h3>
           <InfoHint label="请求数说明">
-            两个数字管的是不同的东西：<strong>追加请求数</strong>
-            是每次回答「继续迭代」 时往<strong>本轮</strong>里加的 LLM
-            请求次数，加完模型接着做，上下文一条不丢；
-            <strong>收尾请求数</strong>是模型收尾时还能发几次工具请求 ——
-            这几次里每个请求
-            都会被拒绝并把原因返回给模型，让它把已有结论说完，而不是被硬生生截断。
+            <strong>追加请求数</strong>
+            ：每次「继续迭代」往本轮加的 LLM 请求数，上下文不丢。
+            <strong>收尾请求数</strong>
+            ：收尾时还能发几次工具请求，每次都会被拒绝，让模型把结论说完。
           </InfoHint>
         </div>
 
@@ -198,7 +194,9 @@ export function BehaviourPanel({
             disabled={saving}
             onClick={() => {
               const parsed = parseAll(
-                ask ? [extension, refusalRequests, timeout] : [extension, refusalRequests],
+                ask
+                  ? [extension, refusalRequests, timeout]
+                  : [extension, refusalRequests],
               );
               if (!parsed) {
                 toast.error("请填写有效的数字");
@@ -224,16 +222,13 @@ export function BehaviourPanel({
         </div>
 
         <p className="text-xs text-muted-foreground">
-          收尾请求数对应 AmritaCore 的 <code>agent_tool_refusal_rounds</code>，
-          这里设置的值会在每次运行时覆盖核心配置。
-          {ask && " 等待上限只用于「挂起并询问」。"}
+          对应 <code>agent_tool_refusal_rounds</code>，运行时覆盖核心配置。
+          {ask && " 等待上限仅用于「挂起并询问」。"}
         </p>
       </section>
 
       <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground">
-        「继续迭代」在本轮内追加 LLM 请求：预算上限变成「已用请求数 +
-        追加请求数」， 模型直接从当前上下文继续，不新开会话、不重放历史。
-        能继续多少次由你决定——服务端不会替你划一个上限。
+        「继续迭代」在本轮内追加请求，模型带着现有上下文接着做，不新开会话、不重放历史。
       </p>
 
       <section className="flex flex-col gap-3 rounded-lg border border-border p-3">
@@ -242,10 +237,9 @@ export function BehaviourPanel({
           <InfoHint label="工具超时说明">
             单次工具调用的<strong>墙钟上限</strong>。超过就终止这次调用，
             把「已超时」作为结果交给模型，本轮继续——不是杀掉整个回答。 填{" "}
-            <code>-1</code> 表示<strong>永不超时</strong>，工具会一直跑到它自己结束、
-            失败或被手动取消。工具自己设的更短上限（例如 shell 的{" "}
-            <code>timeout</code> 参数）会先到，因此仍然生效；等待人工确认的时间也算在这里，
-            所以请保持它大于确认等待上限。
+            <code>-1</code> 表示<strong>永不超时</strong>
+            。工具自己的上限会先到；
+            等待人工确认的时间也计入，所以请保持它大于确认等待上限。
           </InfoHint>
         </div>
 
@@ -278,8 +272,7 @@ export function BehaviourPanel({
         </div>
 
         <p className="text-xs text-muted-foreground">
-          运行中的工具调用可以在对话里的那一行直接「取消」，并填写原因；
-          原因会作为工具结果交给模型，它可以用别的方式继续。
+          对话里正在运行的调用可以随时「取消」并填写原因，原因会作为结果交给模型。
         </p>
       </section>
 
@@ -287,12 +280,10 @@ export function BehaviourPanel({
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="text-sm font-medium">上下文</h3>
           <InfoHint label="上下文消息条数说明">
-            进入模型上下文的<strong>消息条数</strong>上限（不是 token）：每次请求前，
-            历史达到这个条数就会触发上下文管理 ——{" "}
-            <code>compact</code> 把较早的部分折叠成摘要，<code>slide</code>{" "}
-            直接丢弃最早的消息。工具调用与工具结果也算条数，所以一轮里调用越多，消耗得越快。
-            填 <code>-1</code>（或 <code>0</code>）表示<strong>不按条数限制</strong>，
-            只保留 token 阈值；token 阈值依赖服务商回报用量，不回报用量的网关就只能靠这个条数。
+            进入模型上下文的<strong>消息条数</strong>上限（不是 token）。达到后{" "}
+            <code>compact</code> 折叠成摘要，<code>slide</code> 直接丢弃最早的。
+            工具调用与结果也算条数。填 <code>-1</code> 表示不按条数限制，只靠
+            token 阈值。
           </InfoHint>
         </div>
 
@@ -325,7 +316,8 @@ export function BehaviourPanel({
         </div>
 
         <p className="text-xs text-muted-foreground">
-          对应 AmritaCore 的 <code>llm.memory_length_limit</code>，这里设置的值会在每次运行时覆盖核心配置。
+          对应 AmritaCore 的 <code>llm.memory_length_limit</code>
+          ，这里设置的值会在每次运行时覆盖核心配置。
           是否真的裁剪还取决于「核心配置 → 模型请求 → 上下文超限策略」：选{" "}
           <code>none</code> 时历史不受任何限制，只由服务商报错。
         </p>

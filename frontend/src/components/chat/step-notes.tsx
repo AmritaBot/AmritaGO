@@ -87,12 +87,14 @@ export function StepNotes({
         className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left text-[11px] text-muted-foreground transition-colors hover:bg-muted/40"
       >
         <ChevronRightIcon
-          className={cn("size-3 shrink-0 transition-transform", open && "rotate-90")}
+          className={cn(
+            "size-3 shrink-0 transition-transform",
+            open && "rotate-90",
+          )}
         />
         <span className="font-medium">步骤记录</span>
         <span>
-          · {notes.length} 段
-          {streaming ? "，仍在进行" : ""}
+          · {notes.length} 段{streaming ? "，仍在进行" : ""}
         </span>
         <span className="ml-auto truncate text-muted-foreground/70">
           {notes.map((note) => stepLabel(note.step)).join(" → ")}

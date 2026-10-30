@@ -778,10 +778,21 @@ export const api = {
       `/providers/${encodeURIComponent(providerId)}/models/${encodeURIComponent(modelId)}`,
       { method: "PATCH", body: JSON.stringify(patch) },
     ),
-  probeProvider: (base_url: string, api_key: string, protocol: string) =>
+  /**
+   * Ask a saved provider for its model list.
+   *
+   * Only the provider id (and optionally a URL/protocol the user just typed)
+   * crosses the wire: the key and extra headers stay on the server, so a
+   * plaintext token never exists in the browser after it is saved.
+   */
+  probeProvider: (providerId: string, base_url?: string, protocol?: string) =>
     request<ProbeResult>("/providers/probe", {
       method: "POST",
-      body: JSON.stringify({ base_url, api_key, protocol }),
+      body: JSON.stringify({
+        provider_id: providerId,
+        base_url: base_url ?? null,
+        protocol: protocol ?? null,
+      }),
     }),
   activateModel: (key: string) =>
     request<{ active: string; model: string; provider: string }>(

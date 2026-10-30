@@ -130,7 +130,7 @@ def serve() -> int:
         port=PORT,
         reload=False,
         log_level="info",
-        # Protocol pings time out while the dev proxy bundles; the app-level keepalive replaces them.
+        # App keepalive replaces protocol pings that time out during proxy bundling.
         ws_ping_interval=None,
         ws_ping_timeout=None,
     )

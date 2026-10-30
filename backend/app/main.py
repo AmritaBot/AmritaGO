@@ -203,9 +203,19 @@ class ModelPatch(BaseModel):
 
 
 class ProbePayload(BaseModel):
-    base_url: str
-    api_key: str = ""
-    protocol: str = "openai"
+    """Which saved provider to probe, and optionally a URL to try instead.
+
+    No ``api_key`` field on purpose. A probe used to carry the key from the
+    browser so a half-typed form could be tested, which put a plaintext secret
+    on the wire a second time and into any request log in between. The store
+    already holds the key: a probe reads it there, so the browser never handles
+    it after the moment it is saved.
+    """
+
+    provider_id: str
+    # Unset uses the stored URL; an edited URL is tried with the stored key.
+    base_url: str | None = None
+    protocol: str | None = None
 
 
 class AttachmentPayload(BaseModel):
@@ -533,8 +543,24 @@ async def remove_provider_model(provider_id: str, model_id: str) -> dict[str, An
 
 @app.post(f"{API}/providers/probe")
 async def probe_provider(payload: ProbePayload) -> dict[str, Any]:
-    """Ask an endpoint which models it serves; failures are informational."""
-    result = await probe_models(payload.base_url, payload.api_key.strip(), payload.protocol)
+    """Ask a saved provider which models its endpoint serves.
+
+    Credentials never leave the server: the key and extra headers come from the
+    store, so the browser only ever names the provider. A failure is
+    informational — the form stays usable for manual model entry.
+    """
+    provider = await PROVIDERS.get(payload.provider_id)
+    if provider is None:
+        raise HTTPException(status_code=404, detail="provider not found")
+    credentials = await PROVIDERS.credentials(provider.id)
+    base_url = (payload.base_url or "").strip() or provider.base_url
+    protocol = payload.protocol or provider.protocol
+    result = await probe_models(
+        base_url,
+        credentials.api_key,
+        protocol,
+        extra_headers=dict(credentials.extra_headers),
+    )
     return result.model_dump()
 
 
@@ -1732,7 +1758,7 @@ async def chat_socket(websocket: WebSocket) -> None:
                         handle = await SLOTS.slot(current).take()
                         if handle is None:
                             break
-                        # Link the next turn before this one ends so the socket follows without a gap.
+                        # Link the next turn before this one ends for gapless socket follow.
                         successor = await HUB.create(current)
                         successor.task = asyncio.current_task()
                         current_ch.successor = successor

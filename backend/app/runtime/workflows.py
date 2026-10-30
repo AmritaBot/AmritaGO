@@ -16,7 +16,9 @@ from typing import Any
 from amrita_core.agent.strategy import AgentStrategy
 from amrita_core.builtins.agent import NoActionAgentStrategy
 from amrita_core.chatmanager import _step_workflow_rendered
+from amrita_sense import NodeComposeRendered
 from amrita_sense.node.abc_base import AbstractCompose
+from amrita_sense.node.core import BaseNode
 
 from app.runtime.prompt_inject import InjectSpec, StopMode
 from app.runtime.tool_limit import LimitAwareStrategy
@@ -33,11 +35,11 @@ MODE_LABELS: dict[str, str] = {
     "step": "步进 ReAct",
 }
 
-# STEP_EXEC recurs each tool round, allowing graceful stops before the next model request without wasted tokens.
+# STEP_EXEC recurs each tool round, allowing graceful stops before model requests.
 STEP_SUSPEND_POINT = "ChatObject::single_tool_call"
 
 
-def _collect_tags(graph: Any) -> set[str] | None:
+def _collect_tags(graph: NodeComposeRendered | None) -> set[str] | None:
     """Every node tag reachable in a rendered pipeline, or ``None`` if unknown.
 
     ``None`` means the graph could not be walked (an unrendered pipeline, a
@@ -50,7 +52,7 @@ def _collect_tags(graph: Any) -> set[str] | None:
     tags: set[str] = set()
     seen: set[int] = set()
 
-    def walk(node: Any) -> None:
+    def walk(node: NodeComposeRendered | BaseNode | None) -> None:
         if node is None or id(node) in seen:
             return
         seen.add(id(node))
@@ -101,7 +103,7 @@ class WorkflowSpec:
     # ``chat`` | ``react`` | ``step``, shown so "ReAct" never hides the real loop.
     mode: str = "react"
     # Pre-rendered pipeline; ``None`` means AmritaCore's default graph.
-    pipeline: Any = None
+    pipeline: NodeComposeRendered | None = None
     # One sentence of advice; the UI shows it under the description.
     hint: str = ""
     # Supported suspend points and stop modes; no points means graceful stop is unavailable.

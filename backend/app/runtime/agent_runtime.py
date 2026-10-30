@@ -21,7 +21,7 @@ from amrita_core import ChatObject
 from amrita_core.base.adapter import MessageContent
 from amrita_core.base.backend import AbilityBackend, BackendSlots, MemoryBackend
 from amrita_core.components.compaction import ContextCompactor, split_history
-from amrita_core.config import get_config
+from amrita_core.config import AmritaConfig, get_config
 from amrita_core.consts import DEFAULT_TEMPLATE
 from amrita_core.contents import MessageWithMetadata
 from amrita_core.contexts import AbilityContext, DatabackendOptions
@@ -230,16 +230,12 @@ def _tool_exchanges(trace: list[dict[str, Any]]) -> list[Any]:
                 tool_calls=[
                     ToolCall(
                         id=tool_id,
-                        function=Function(
-                            name=name, arguments=str(slot.get("arguments") or "{}")
-                        ),
+                        function=Function(name=name, arguments=str(slot.get("arguments") or "{}")),
                     )
                 ],
             )
         )
-        rebuilt.append(
-            ToolResult(role="tool", name=name, content=result, tool_call_id=tool_id)
-        )
+        rebuilt.append(ToolResult(role="tool", name=name, content=result, tool_call_id=tool_id))
     return rebuilt
 
 
@@ -402,7 +398,7 @@ def _is_fallback_only(text: str | None) -> bool:
 
 
 def _compaction_plan(
-    memory: MemoryModel, config: Any, preset: ModelPreset
+    memory: MemoryModel, config: AmritaConfig, preset: ModelPreset
 ) -> tuple[int, int] | None:
     """``(folded, kept)`` when this turn will fold history, else ``None``.
 
@@ -523,7 +519,7 @@ async def _iter_events(
     )
 
     if channel is not None:
-        # Publish before the first event so startup-racing stops can find the stream and suspend points.
+        # Publish early so stops can find this stream before its first event.
         channel.stream = chat.io_stream
         channel.inject = workflow.inject
 
@@ -612,7 +608,7 @@ async def _iter_events(
                     last_rounds = rounds
                     yield {"type": "usage", "usage": _live_usage(billing.records)}
                     if fold_plan is not None and not compaction_reported:
-                        # First request runs after ``MANAGE_CONTEXT``, so this proves the fold landed.
+                        # The first request follows ``MANAGE_CONTEXT``, confirming the fold.
                         compaction_reported = True
                         yield announce_compaction()
                 continue

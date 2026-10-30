@@ -13,7 +13,13 @@ import json
 import time
 import uuid
 from io import StringIO
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from amrita_sense.streaming import SuspendObjectStream
+
+# Deferred ``InjectSpec`` import avoids a cycle with ``prompt_inject``.
+if TYPE_CHECKING:
+    from app.runtime.prompt_inject import InjectSpec
 
 _TERMINAL = {"done", "error"}
 
@@ -30,7 +36,7 @@ class StreamChannel:
         self.error: str | None = None
         # Cut off at the gate: nothing follows, no summary and no last model call.
         self.aborted = False
-        # The strategy checks this at each round boundary to end gracefully without cancellation.
+        # Checked at round boundaries to end gracefully without cancellation.
         self.stop_requested = False
         self.stop_mode: str | None = None
         self._buf = StringIO()
@@ -39,12 +45,12 @@ class StreamChannel:
         self._changed = asyncio.Event()
         # Set by whoever started the run, so the socket can cancel it.
         self.task: asyncio.Task[None] | None = None
-        # The active turn to cancel immediately, leaving any queued prompt for its own turn.
+        # Active turn to cancel while leaving queued prompts for their own turn.
         self.turn_task: asyncio.Task[None] | None = None
         # This turn's suspend stream, used to arm graceful stops on the correct run.
-        self.stream: Any | None = None
+        self.stream: SuspendObjectStream[Any] | None = None
         # ``InjectSpec`` of the workflow this turn runs.
-        self.inject: Any | None = None
+        self.inject: InjectSpec | None = None
         # Summary of the last finished turn, republished as ``done`` by the driver.
         self.turn_summary: dict[str, Any] | None = None
         # Next channel in the chain; the forwarder follows it when this one ends.

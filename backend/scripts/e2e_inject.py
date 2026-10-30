@@ -137,7 +137,7 @@ async def main() -> int:
             assert queued["handle"]["content"] == "第二轮：换个话题", queued
             print("queued ok:", queued["handle"]["id"])
 
-            # Verify the declared suspend point is reached instead of silently falling back to immediate stop.
+            # Verify the declared suspend point is reached, not an immediate-stop fallback.
             ack = await events.until(lambda e: e["type"] == "stop_ack", timeout=40)
             assert ack["accepted"] is True, ack
             if expected["graceful"]:

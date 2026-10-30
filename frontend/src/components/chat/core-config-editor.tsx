@@ -59,8 +59,8 @@ const GROUP_LABELS: Record<string, string> = {
  * timeout.
  */
 const UNSAFE_NOTE = {
-  title: "这些选项会改变 Agent 的行为，而不只是速度或费用",
-  body: "改错时通常不会报错，只会表现为 Agent 突然只说不做、反复调同一个工具，或者忘掉前面的对话。调之前建议先记下原值；不确定就留默认值。",
+  title: "这些选项会改变 Agent 的行为，不只是速度或费用",
+  body: "改错通常不报错，只表现为只说不做、反复调同一个工具或忘掉前面的对话。不确定就留默认值。",
 } as const;
 
 /**
@@ -70,7 +70,7 @@ const UNSAFE_NOTE = {
  */
 const THINKING_NOTE = {
   title: "这里的思考是「非原生思考」",
-  body: "变量名里的 reasoning / thought 只改变框架给模型的提示词，任何模型都能用，不会改动请求参数。原生思考在「模型」页签里按模型开关：它会让请求带上 thinking 参数、由服务商真实产生推理 token，也会按输出计费；模型不支持时可能直接报错。两者可以叠加，但同时开启会让输出预算被两套推理分掉。",
+  body: "只改提示词，不改请求参数，任何模型都能用。原生思考在「模型」页签按模型开关；两者同时开会让输出预算被分掉。",
 } as const;
 
 export function CoreConfigEditor() {
@@ -192,9 +192,8 @@ export function CoreConfigEditor() {
                 配置文件里有 {removed.length} 项当前版本已不再使用
               </p>
               <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-                大多是因为 AmritaCore
-                升级后删掉或改名了这些字段。它们不会生效，也不会被自动删除——
-                先确认下面的原始值你不再需要，再清理；否则可以按新名字重新填一遍。
+                多是 AmritaCore
+                升级后删掉或改名的字段。它们不会生效，确认不需要后再清理。
               </p>
             </div>
             <Button

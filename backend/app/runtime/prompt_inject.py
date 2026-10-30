@@ -45,6 +45,7 @@ from types import MappingProxyType
 from typing import Any, Protocol, runtime_checkable
 
 from amrita_sense.logging import logger
+from amrita_sense.streaming import SuspendObjectStream
 
 from app.runtime.audit import BROKER
 from app.runtime.limit_gate import LIMITS
@@ -386,13 +387,15 @@ class TurnInjector:
             )
         return await self._immediate(reason="graceful_timeout")
 
-    def _arm(self, stream: Any, tags: tuple[str, ...]) -> asyncio.Task[None]:
+    def _arm(self, stream: SuspendObjectStream[Any], tags: tuple[str, ...]) -> asyncio.Task[None]:
         """Ask the producer to stop at one of ``tags`` and keep the wait reachable."""
         waiter = asyncio.create_task(stream.wait_to_suspend(*tags, timeout=self._timeout))
         self._waiter = waiter
         return waiter
 
-    async def _await_park(self, waiter: asyncio.Task[None], stream: Any) -> bool:
+    async def _await_park(
+        self, waiter: asyncio.Task[None], stream: SuspendObjectStream[Any]
+    ) -> bool:
         """Whether the armed suspension was reached; always releases the stream."""
         try:
             await asyncio.wait({waiter})
@@ -409,13 +412,13 @@ class TurnInjector:
         finally:
             await self._release(waiter, stream)
 
-    async def _release(self, waiter: asyncio.Task[None], stream: Any) -> None:
+    async def _release(self, waiter: asyncio.Task[None], stream: SuspendObjectStream[Any]) -> None:
         self._waiter = None
         if not waiter.done():
             waiter.cancel()
             with suppress(asyncio.CancelledError, Exception):
                 await asyncio.wait({waiter})
-        # Always resume because a timed-out wait may leave the producer parked without a resume future.
+        # Always resume; a timed-out wait may leave the producer parked.
         stream.resume()
 
 

@@ -108,7 +108,9 @@ async def check_finished_turn_is_not_killed() -> None:
     print("turn_finished ok")
 
 
-def _call(tool_id: str, name: str, *, result: str | None, arguments: str = '{"command":"ls"}') -> list:
+def _call(
+    tool_id: str, name: str, *, result: str | None, arguments: str = '{"command":"ls"}'
+) -> list:
     """The two events the strategy records per call: the start, then the end."""
     start = {
         "kind": "event",

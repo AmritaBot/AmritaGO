@@ -552,7 +552,7 @@ function ToolLimitCard({
                 onClick={onContinue}
                 title={`本轮再追加 ${extension} 次 LLM 请求，上下文不丢`}
               >
-                继续迭代（本轮 +{extension} 次请求）
+                继续迭代（本轮 +{extension} 次）
               </Button>
               <Button
                 size="sm"
@@ -721,7 +721,7 @@ export function ChatView({
   const guard: GuardState = useMemo(() => {
     if (models.length === 0) {
       return {
-        blocked: "还没有配置模型。先到设置 -> 模型 里添加 Provider 和模型。",
+        blocked: "还没有配置模型，先去设置 -> 模型里添加。",
         needsModel: true,
       };
     }
