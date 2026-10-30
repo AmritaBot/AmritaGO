@@ -61,7 +61,7 @@ class _FakeStream:
 
 def _channel(stream: _FakeStream) -> StreamChannel:
     channel = StreamChannel("s-stop")
-    channel.stream = stream
+    channel.stream = stream  # type: ignore
     channel.inject = BUILTIN_WORKFLOWS["react-step"].inject
     stream.channel = channel
     return channel

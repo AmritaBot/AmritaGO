@@ -58,7 +58,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b'{"data":[{"id":"gateway-large"},{"id":"gateway-small"}]}')
 
-    def log_message(self, *args):
+    def log_message(self, *args):  # type: ignore
         pass
 
 
