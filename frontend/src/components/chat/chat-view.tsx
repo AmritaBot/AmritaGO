@@ -257,7 +257,7 @@ function MessageBubble({
 }: {
   message: ChatMessage;
   /** Fork the conversation at this message. Offered for both roles. */
-  onBranch?: (entryId: string) => void;
+  onBranch?: (message: ChatMessage) => void;
   /** Re-send the prompt behind a failed turn. Only wired up for errors. */
   onRetry?: () => void;
   /**
@@ -403,7 +403,7 @@ function MessageBubble({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                onClick={() => onBranch(message.id)}
+                onClick={() => onBranch(message)}
                 aria-label="从这里分叉"
                 title="从这里分叉：新会话保留到这条消息为止"
               >
@@ -478,7 +478,7 @@ function MessageBubble({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                onClick={() => onBranch(message.id)}
+                onClick={() => onBranch(message)}
                 aria-label="从这里分叉"
                 title="从这里分叉：新会话保留到这条消息为止"
               >
@@ -616,7 +616,7 @@ export function ChatView({
   onModelsChanged: () => void;
   onOpenSettings: (tab?: SettingsTab) => void;
   /** Fork the session at a history entry, keeping that message. */
-  onBranch: (entryId: string) => void;
+  onBranch: (message: ChatMessage) => void;
   /** Tell the sidebar this conversation started or stopped working. */
   onRunningChange?: (running: boolean) => void;
 }) {

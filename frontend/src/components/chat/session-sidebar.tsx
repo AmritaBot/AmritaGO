@@ -1,5 +1,10 @@
 /**
- * Session list with an archive drawer.
+ * Session list, grouped by the workspace each conversation belongs to.
+ *
+ * A session is not a free-floating chat: it works inside one directory, and
+ * that is the thing the user is actually switching between. Grouping by
+ * workspace makes the sidebar say so, and gives every group its own "new
+ * session here" so a conversation never starts in the wrong place.
  *
  * Deleting is only offered inside the archive. A live session instead gets
  * branch and archive: both are reversible, while deletion should require
@@ -10,11 +15,12 @@
  * the wrong row is easy, and a side bar is not the place to lose a transcript.
  */
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   ArchiveIcon,
   ArchiveRestoreIcon,
   ChevronDownIcon,
+  FolderIcon,
   GitBranchIcon,
   MessageSquareIcon,
   PencilIcon,
@@ -202,13 +208,64 @@ function SessionRow({
   );
 }
 
+interface WorkspaceGroup {
+  /** Absolute path; ``""`` when the registry is empty. */
+  path: string;
+  name: string;
+  sessions: SessionMeta[];
+}
+
+/**
+ * Bucket sessions by workspace.
+ *
+ * Registry order is kept so the list does not reshuffle whenever a session
+ * answers; workspaces that are no longer registered (or a session pointing at
+ * a directory that was removed) still get a group of their own instead of
+ * disappearing. Sessions without a stored workspace belong to the default one,
+ * which is what the backend falls back to.
+ */
+function groupByWorkspace(
+  sessions: SessionMeta[],
+  workspaces: { name: string; path: string }[],
+): WorkspaceGroup[] {
+  const groups: WorkspaceGroup[] = workspaces.map((item) => ({
+    path: item.path,
+    name: item.name,
+    sessions: [],
+  }));
+  const index = new Map(groups.map((group, position) => [group.path, position]));
+  const fallback = groups[0]?.path ?? "";
+
+  for (const session of sessions) {
+    const key = session.workspace ?? fallback;
+    let position = index.get(key);
+    if (position === undefined) {
+      // A directory that left the registry: keep its conversations visible.
+      position = groups.length;
+      groups.push({ path: key, name: baseName(key) || "未登记目录", sessions: [] });
+      index.set(key, position);
+    }
+    groups[position].sessions.push(session);
+  }
+  return groups;
+}
+
+function baseName(path: string): string {
+  if (!path) return "";
+  const parts = path.split(/[\\/]+/).filter(Boolean);
+  return parts.at(-1) ?? path;
+}
+
 export function SessionSidebar({
   sessions,
   archived,
+  workspaces,
+  activeWorkspace,
   activeId,
   runningIds = [],
   onSelect,
   onCreate,
+  onCreateIn,
   onDelete,
   onRename,
   onArchive,
@@ -218,11 +275,17 @@ export function SessionSidebar({
 }: {
   sessions: SessionMeta[];
   archived: SessionMeta[];
+  workspaces: { name: string; path: string }[];
+  /** Workspace of the open conversation, so its group can be marked. */
+  activeWorkspace: string | null;
   activeId: string | null;
   /** Sessions with a live turn; their titles get the sheen. */
   runningIds?: string[];
   onSelect: (id: string) => void;
+  /** New session in the current conversation's workspace. */
   onCreate: () => void;
+  /** New session in a specific workspace. */
+  onCreateIn: (path: string) => void;
   onDelete: (id: string) => void;
   onRename: (id: string, title: string) => void;
   onArchive: (id: string, archived: boolean) => void;
@@ -232,11 +295,26 @@ export function SessionSidebar({
   version?: string;
 }) {
   const [showArchive, setShowArchive] = useState(false);
+  // Collapsed groups, by path; expanded is the default.
+  const [collapsed, setCollapsed] = useState<string[]>([]);
   // The session waiting for a second click, plus which action it was for.
   const [pending, setPending] = useState<{
     session: SessionMeta;
     kind: "archive" | "delete";
   } | null>(null);
+
+  const groups = useMemo(
+    () => groupByWorkspace(sessions, workspaces),
+    [sessions, workspaces],
+  );
+
+  const toggleGroup = (path: string) => {
+    setCollapsed((prev) =>
+      prev.includes(path)
+        ? prev.filter((item) => item !== path)
+        : [...prev, path],
+    );
+  };
 
   return (
     <>
@@ -262,37 +340,109 @@ export function SessionSidebar({
           size="icon-sm"
           onClick={onCreate}
           aria-label="新建会话"
+          title="在当前工作区新建会话"
         >
           <PlusIcon />
         </Button>
       </div>
 
       <div className="flex-1 overflow-y-auto px-2 py-2">
-        <p className="px-2 pt-1 pb-2 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
-          会话
-        </p>
-        <ul className="flex flex-col gap-0.5">
-          {sessions.map((session) => (
-            <li key={session.id}>
-              <SessionRow
-                session={session}
-                active={session.id === activeId}
-                archived={false}
-                running={runningIds.includes(session.id)}
-                onSelect={() => onSelect(session.id)}
-                onRename={(title) => onRename(session.id, title)}
-                onArchive={() => setPending({ session, kind: "archive" })}
-                onDelete={() => setPending({ session, kind: "delete" })}
-                onBranch={() => onBranch(session)}
-              />
-            </li>
-          ))}
-          {sessions.length === 0 && (
-            <li className="px-2 py-1 text-xs text-muted-foreground">
+        <div className="flex flex-col gap-2">
+          {groups.map((group) => {
+            const isOpen = !collapsed.includes(group.path);
+            const isActiveGroup =
+              activeWorkspace !== null && group.path === activeWorkspace;
+            return (
+              <section key={group.path || "__default"}>
+                <div
+                  className={cn(
+                    "group/head flex items-center gap-1 rounded-md px-2 py-1.5",
+                    "hover:bg-sidebar-accent/50",
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(group.path)}
+                    className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                    title={group.path || group.name}
+                  >
+                    <ChevronDownIcon
+                      className={cn(
+                        "size-3 shrink-0 text-muted-foreground transition-transform",
+                        !isOpen && "-rotate-90",
+                      )}
+                    />
+                    <FolderIcon
+                      className={cn(
+                        "size-3.5 shrink-0",
+                        isActiveGroup
+                          ? "text-sidebar-accent-foreground"
+                          : "text-muted-foreground",
+                      )}
+                    />
+                    <span
+                      className={cn(
+                        "truncate text-[12px] font-medium tracking-wide",
+                        isActiveGroup
+                          ? "text-sidebar-accent-foreground"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      {group.name}
+                    </span>
+                    <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                      {group.sessions.length}
+                    </span>
+                  </button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="size-6 shrink-0 opacity-0 transition-opacity group-hover/head:opacity-100"
+                    onClick={() => onCreateIn(group.path)}
+                    aria-label={`在 ${group.name} 新建会话`}
+                    title={`在 ${group.name} 新建会话`}
+                  >
+                    <PlusIcon className="size-3.5" />
+                  </Button>
+                </div>
+
+                {isOpen && (
+                  <ul className="mt-0.5 flex flex-col gap-0.5">
+                    {group.sessions.map((session) => (
+                      <li key={session.id}>
+                        <SessionRow
+                          session={session}
+                          active={session.id === activeId}
+                          archived={false}
+                          running={runningIds.includes(session.id)}
+                          onSelect={() => onSelect(session.id)}
+                          onRename={(title) => onRename(session.id, title)}
+                          onArchive={() =>
+                            setPending({ session, kind: "archive" })
+                          }
+                          onDelete={() =>
+                            setPending({ session, kind: "delete" })
+                          }
+                          onBranch={() => onBranch(session)}
+                        />
+                      </li>
+                    ))}
+                    {group.sessions.length === 0 && (
+                      <li className="px-7 py-1 text-[11px] text-muted-foreground">
+                        这个工作区还没有会话
+                      </li>
+                    )}
+                  </ul>
+                )}
+              </section>
+            );
+          })}
+          {groups.length === 0 && (
+            <p className="px-2 py-1 text-xs text-muted-foreground">
               还没有会话
-            </li>
+            </p>
           )}
-        </ul>
+        </div>
 
         <button
           type="button"

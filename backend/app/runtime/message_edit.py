@@ -77,23 +77,48 @@ def _content_text(content: Any) -> str:
     return "".join(parts)
 
 
+def _matches(message: Any, prompt: str) -> bool:
+    """Does this context message hold the prompt being edited?
+
+    The stored content is the prompt plus whatever the attachments appended
+    (``[attached file: ...]`` markers), so a prefix match is the honest test.
+    An image-only prompt has no text at all; both sides are then empty.
+    """
+    if getattr(message, "role", None) != "user":
+        return False
+    text = _content_text(getattr(message, "content", "")).strip()
+    wanted = prompt.strip()
+    if not wanted:
+        return not text
+    return text.startswith(wanted)
+
+
+def _anchor_index(messages: list[Any], start: int | None, prompt: str) -> int | None:
+    """The recorded position of the prompt, if it still holds.
+
+    ``context_start`` is written when the turn begins, so it is exact until a
+    compaction shifts the list. Verifying the message before trusting the
+    index keeps a folded context from being cut at the wrong place.
+    """
+    if start is None or start < 0 or start >= len(messages):
+        return None
+    return start if _matches(messages[start], prompt) else None
+
+
 def _trim_index(messages: list[Any], prompt: str) -> int | None:
     """Where the prompt starts in the model context, or ``None``.
 
     Matching on content rather than position because the context also holds
     tool traffic the transcript never showed, so the two lists do not line up.
-    Falls back to the last user message: an image-only prompt has no text to
-    compare, and it is still the message being replaced.
+
+    ``None`` means "cannot tell". The caller must then leave the context
+    alone: cutting at the last user message instead would delete whatever
+    happens to sit there — a compaction summary, an injected prompt — which
+    is worse than leaving one stale prompt behind.
     """
     wanted = prompt.strip()
     for index in range(len(messages) - 1, -1, -1):
-        message = messages[index]
-        if getattr(message, "role", None) != "user":
-            continue
-        if _content_text(getattr(message, "content", "")).strip() == wanted:
-            return index
-    for index in range(len(messages) - 1, -1, -1):
-        if getattr(messages[index], "role", None) == "user":
+        if _matches(messages[index], wanted):
             return index
     return None
 
@@ -174,10 +199,13 @@ async def rewrite_last_prompt(
     keep = entries[:index]
 
     memory = await load_context(session_id)
-    cut = _trim_index(memory.messages, target.content)
+    cut = _anchor_index(memory.messages, target.context_start, target.content)
+    if cut is None:
+        cut = _trim_index(memory.messages, target.content)
     removed_messages = 0
     if cut is None:
-        # If context was folded or cleared, keep the rollback so the user can retype.
+        # Folded or cleared context: keep the rollback so the user can retype,
+        # but do not guess where the prompt was.
         logger.warning(f"Session {session_id}: no context message matched the edited prompt")
     else:
         removed_messages = len(memory.messages) - cut

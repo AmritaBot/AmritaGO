@@ -53,6 +53,12 @@ export interface SessionMeta {
   agent: string | null;
   /** Directory this conversation works in; ``null`` inherits the default. */
   workspace: string | null;
+  /**
+   * Model key (``provider::model``) this conversation answers with.
+   *
+   * Per session, not per app: the switcher edits this conversation only.
+   */
+  model: string | null;
   message_count: number;
   usage: UsageTotals;
   archived: boolean;
@@ -194,9 +200,19 @@ export interface ModelOption {
   thinking_effort: string | null;
 }
 
+/** What the endpoint says about one model, when it says anything. */
+export interface ProbeModelInfo {
+  id: string;
+  label?: string;
+  max_context?: number | null;
+  multimodal?: boolean | null;
+}
+
 export interface ProbeResult {
   ok: boolean;
   models: string[];
+  /** The same list with the metadata the form can fill in. */
+  details?: ProbeModelInfo[];
   error: string | null;
   latency_ms: number | null;
 }
@@ -614,6 +630,8 @@ export type StreamEvent =
       model: string;
       tools: number;
       inject?: InjectCapability;
+      /** Id of the user entry just written to history. */
+      entry_id?: string;
     }
   | { type: "delta"; text: string }
   | { type: "reasoning"; text: string }
@@ -645,6 +663,8 @@ export type StreamEvent =
       workflow?: string;
       agent?: string;
       stopped?: boolean;
+      /** Id of the assistant entry just written to history. */
+      entry_id?: string | null;
     }
   | {
       type: "queued";
@@ -977,10 +997,15 @@ export const api = {
     request<{ sessions: SessionMeta[] }>(
       `/sessions?include_archived=${includeArchived}`,
     ),
-  createSession: (title = "新会话") =>
+  createSession: (
+    options: { title?: string; workspace?: string | null } = {},
+  ) =>
     request<SessionMeta>("/sessions", {
       method: "POST",
-      body: JSON.stringify({ title }),
+      body: JSON.stringify({
+        title: options.title ?? "新会话",
+        workspace: options.workspace ?? undefined,
+      }),
     }),
   renameSession: (id: string, title: string) =>
     request<SessionMeta>(`/sessions/${id}?title=${encodeURIComponent(title)}`, {
@@ -994,7 +1019,7 @@ export const api = {
    */
   setSessionConfig: (
     id: string,
-    config: { workspace?: string; agent?: string },
+    config: { workspace?: string; agent?: string; model?: string },
   ) =>
     request<SessionMeta>(`/sessions/${id}/config`, {
       method: "POST",
@@ -1008,7 +1033,14 @@ export const api = {
     }),
   branchSession: (
     id: string,
-    options?: { index?: number; entry_id?: string; title?: string },
+    options?: {
+      index?: number;
+      entry_id?: string;
+      title?: string;
+      /** Fallback when the id is a client-side bubble that never reached disk. */
+      entry_role?: "user" | "assistant";
+      entry_content?: string;
+    },
   ) =>
     request<SessionMeta>(`/sessions/${id}/branch`, {
       method: "POST",

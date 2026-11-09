@@ -414,6 +414,17 @@ export function useChatSocket(sessionId: string | null) {
                 base.pop();
               }
             }
+            // Adopt the id the entry got on disk. Without this the bubble keeps
+            // a client-only uuid, and forking from it asks for an entry that
+            // does not exist.
+            const serverId = event.entry_id;
+            if (serverId && !base.some((message) => message.id === serverId)) {
+              for (let index = base.length - 1; index >= 0; index -= 1) {
+                if (base[index].role !== "user") continue;
+                base[index] = { ...base[index], id: serverId };
+                break;
+              }
+            }
             // A queued prompt already has its bubble and stays exactly there.
             if (!id) return base;
             return base.map((message) =>
@@ -562,11 +573,23 @@ export function useChatSocket(sessionId: string | null) {
           break;
         }
         case "turn_end": {
+          // Remember which bubble this turn drew before it is finalised.
+          const bubbleId = activeIdRef.current;
           // Keep busy when a queued message continues the run; the next start opens a new bubble.
           finalizeAssistant(
             { usage: event.usage ?? null, live: null },
             { keepBusy: true },
           );
+          // Same reason as the user bubble: the stored entry id is the only
+          // one a fork can address.
+          if (event.entry_id && bubbleId) {
+            const entryId = event.entry_id;
+            setMessages((prev) =>
+              prev.map((message) =>
+                message.id === bubbleId ? { ...message, id: entryId } : message,
+              ),
+            );
+          }
           setLiveUsage(null);
           setRunningTools({});
           setLimitRequest(null);

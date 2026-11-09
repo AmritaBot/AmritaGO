@@ -39,6 +39,10 @@ class SessionMeta(BaseModel):
     agent: str | None = None
     # Use the global workspace when this session has no stored workspace.
     workspace: str | None = None
+    # Model key (``provider::model``) this session answers with. ``None``
+    # follows the app-wide default; picking a model in one session must not
+    # change what the other conversations are using.
+    model: str | None = None
     message_count: int = 0
     usage: UsageTotals = Field(default_factory=UsageTotals)
     # Archived sessions are hidden from the sidebar but still on disk.
@@ -76,6 +80,12 @@ class HistoryEntry(BaseModel):
     agent: str | None = None
     # Images pasted into the composer / long pastes stored as files.
     attachments: list[dict[str, Any]] = Field(default_factory=list)
+    # Where this prompt starts in ``context.json`` when the turn began.
+    # Editing a prompt rolls the model context back to this point; an index is
+    # exact, while matching on text is not (attachments change the stored
+    # content, and a folded context no longer contains the prompt at all).
+    # ``None`` on entries written before the field existed.
+    context_start: int | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -209,6 +219,7 @@ async def create_session(
     *,
     workspace: str | None = None,
     agent: str | None = None,
+    model: str | None = None,
 ) -> SessionMeta:
     """Create a session, snapshotting the defaults it should keep.
 
@@ -223,6 +234,7 @@ async def create_session(
         preset=preset,
         workspace=workspace,
         agent=agent,
+        model=model,
     )
     _session_dir(meta.id).mkdir(parents=True, exist_ok=True)
     await write_json(meta_path(meta.id), meta.model_dump())
@@ -237,6 +249,7 @@ async def set_session_config(
     *,
     workspace: str | None = None,
     agent: str | None = None,
+    model: str | None = None,
 ) -> SessionMeta | None:
     """Point one session at a workspace and/or an agent.
 
@@ -251,6 +264,8 @@ async def set_session_config(
         meta.workspace = workspace
     if agent is not None:
         meta.agent = agent
+    if model is not None:
+        meta.model = model
     await save_meta(meta)
     return meta
 
@@ -294,6 +309,8 @@ async def branch_session(
     index: int | None = None,
     title: str | None = None,
     entry_id: str | None = None,
+    entry_role: str | None = None,
+    entry_content: str | None = None,
 ) -> SessionMeta | None:
     """Fork a session into a new one.
 
@@ -319,6 +336,18 @@ async def branch_session(
     entries = await load_history(session_id)
     if entry_id is not None:
         position = next((i for i, entry in enumerate(entries) if entry.id == entry_id), None)
+        if position is None and entry_content is not None:
+            # A bubble the client drew optimistically carries a client-side id
+            # that never reached disk. Fall back to the last entry that says the
+            # same thing, in the same role.
+            wanted = entry_content.strip()
+            for candidate in range(len(entries) - 1, -1, -1):
+                entry = entries[candidate]
+                if entry_role is not None and entry.role != entry_role:
+                    continue
+                if entry.content.strip() == wanted:
+                    position = candidate
+                    break
         if position is None:
             raise ValueError("history entry not found")
         index = position + 1
@@ -343,8 +372,10 @@ async def branch_session(
         title=label,
         preset=source.preset,
         agent=source.agent,
-        # A branch continues the same work, in the same directory.
+        # A branch continues the same work, in the same directory, with the
+        # same model: forking is not a reason to change how it answers.
         workspace=source.workspace,
+        model=source.model,
         parent_id=source.id,
         branch_from=source.id,
         branch_index=index if index is not None else len(entries),

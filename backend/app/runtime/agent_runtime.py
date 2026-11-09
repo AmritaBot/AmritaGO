@@ -84,6 +84,8 @@ class TurnDraft:
     counted_tools: set[str] = field(default_factory=set)
     first_delta_at: float | None = None
     last_delta_at: float | None = None
+    # History entry the client should rename its assistant bubble to.
+    entry_id: str | None = None
     # The assistant entry is already in ``history.jsonl``.
     history_written: bool = False
     # The turn's messages are already in ``context.json``.
@@ -669,21 +671,22 @@ async def _iter_events(
     # Treat trace as content so a stopped turn's notice remains in the transcript.
     if answer or draft.error or trace:
         draft.settle_sections()
-        await append_history(
-            session_id,
-            HistoryEntry(
-                role="assistant",
-                content=answer,
-                trace=trace,
-                sections=draft.sections,
-                error=draft.error,
-                usage=usage,
-                steps=draft.steps,
-                tool_calls=draft.tool_calls,
-                workflow=workflow.name,
-                agent=agent_name,
-            ),
+        entry = HistoryEntry(
+            role="assistant",
+            content=answer,
+            trace=trace,
+            sections=draft.sections,
+            error=draft.error,
+            usage=usage,
+            steps=draft.steps,
+            tool_calls=draft.tool_calls,
+            workflow=workflow.name,
+            agent=agent_name,
         )
+        # Publish the id so the bubble the client drew can adopt it; a fork
+        # from that bubble is otherwise addressed to an id nobody stored.
+        draft.entry_id = entry.id
+        await append_history(session_id, entry)
         draft.history_written = True
 
     totals, meta = await record_turn_usage(session_id, usage)
@@ -709,6 +712,7 @@ async def _iter_events(
         "workflow": workflow.name,
         "agent": agent_name,
         "stopped": draft.stopped,
+        "entry_id": draft.entry_id,
     }
 
 
@@ -751,24 +755,23 @@ async def _run_command(
         text = f"指令 /{spec.name} 执行失败：{type(exc).__name__}: {exc}"
         await context.emit(text, {"type": "system", "extra_type": "command_failed"})
 
+    entry: HistoryEntry | None = None
     if text or context.events:
-        await append_history(
-            session_id,
-            HistoryEntry(
-                role="assistant",
-                content=text,
-                trace=[
-                    {
-                        "kind": "event",
-                        "content": event["content"],
-                        "metadata": event["metadata"],
-                    }
-                    for event in context.events
-                ],
-                workflow="command",
-                agent=spec.name,
-            ),
+        entry = HistoryEntry(
+            role="assistant",
+            content=text,
+            trace=[
+                {
+                    "kind": "event",
+                    "content": event["content"],
+                    "metadata": event["metadata"],
+                }
+                for event in context.events
+            ],
+            workflow="command",
+            agent=spec.name,
         )
+        await append_history(session_id, entry)
     await bump_session(session_id)
     summary = {
         "type": "turn_end",
@@ -779,6 +782,7 @@ async def _run_command(
         "workflow": "command",
         "agent": spec.name,
         "stopped": False,
+        "entry_id": entry.id if entry is not None else None,
     }
     channel.turn_summary = summary
     await channel.publish(summary)
@@ -802,20 +806,19 @@ async def _finalize_stopped(
         # Keep only what the turn actually produced; there is no reply to invent for a stop.
         if not draft.history_written and (draft.answer_text or draft.error or draft.trace):
             draft.settle_sections()
-            await append_history(
-                draft.session_id,
-                HistoryEntry(
-                    role="assistant",
-                    content=draft.answer_text,
-                    trace=draft.trace,
-                    sections=draft.sections,
-                    error=draft.error,
-                    steps=draft.steps,
-                    tool_calls=draft.tool_calls,
-                    workflow=draft.workflow,
-                    agent=draft.agent_name,
-                ),
+            entry = HistoryEntry(
+                role="assistant",
+                content=draft.answer_text,
+                trace=draft.trace,
+                sections=draft.sections,
+                error=draft.error,
+                steps=draft.steps,
+                tool_calls=draft.tool_calls,
+                workflow=draft.workflow,
+                agent=draft.agent_name,
             )
+            draft.entry_id = entry.id
+            await append_history(draft.session_id, entry)
             draft.history_written = True
     except Exception as exc:  # pragma: no cover - best effort on the way out
         logger.opt(exception=exc).error("Failed to save a stopped turn")
@@ -829,6 +832,7 @@ async def _finalize_stopped(
         "workflow": draft.workflow,
         "agent": draft.agent_name,
         "stopped": True,
+        "entry_id": draft.entry_id,
     }
     channel.turn_summary = summary
     with suppress(asyncio.CancelledError, Exception):
@@ -881,14 +885,16 @@ async def run_turn(
         agent=agent.name if agent else "standard",
         preset=preset.name,
     )
-    await append_history(
-        session_id,
-        HistoryEntry(
-            role="user",
-            content=user_input,
-            attachments=list(attachments or []),
-        ),
+    user_entry = HistoryEntry(
+        role="user",
+        content=user_input,
+        attachments=list(attachments or []),
+        # Where this prompt sits in the model context. An edit rolls back to
+        # this index; hunting for matching text instead can cut the wrong
+        # message once the context has been folded.
+        context_start=len((await load_context(session_id)).messages),
     )
+    await append_history(session_id, user_entry)
     draft = TurnDraft(session_id=session_id, agent_name=agent.name if agent else "standard")
     error: str | None = None
     try:
@@ -903,6 +909,10 @@ async def run_turn(
             draft=draft,
             channel=channel,
         ):
+            if event["type"] == "start":
+                # The prompt is on disk now; tell the client its real id so the
+                # bubble it drew optimistically can stop being a local guess.
+                event = {**event, "entry_id": user_entry.id}
             if event["type"] == "error":
                 error = str(event.get("message"))
             if event["type"] == "turn_end":

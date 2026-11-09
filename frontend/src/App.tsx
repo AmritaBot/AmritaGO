@@ -15,6 +15,7 @@ import type { SettingsTab } from "@/components/chat/settings-dialog";
 import { Button } from "@/components/ui/button";
 import { PromptDialog } from "@/components/ui/prompt-dialog";
 import { useTheme } from "@/hooks/use-theme";
+import type { ChatMessage } from "@/hooks/use-chat-socket";
 import {
   api,
   type AgentPreset,
@@ -237,18 +238,26 @@ export default function App() {
     setArchived(apply);
   };
 
-  /** Point the active conversation at a workspace or agent (per session). */
+  /** Point the active conversation at a workspace, agent or model (per session). */
   const configureSession = async (config: {
     workspace?: string;
     agent?: string;
+    model?: string;
   }) => {
     if (!activeId) return;
     const updated = await api.setSessionConfig(activeId, config);
     replaceSession(updated);
   };
 
-  const createSession = async () => {
-    const created = await api.createSession();
+  /**
+   * A session belongs to a workspace, so a new one is created inside the
+   * workspace it was asked for — the current conversation's, or the group the
+   * user clicked. It never lands "nowhere" and then drifts.
+   */
+  const createSession = async (workspace?: string | null) => {
+    const current = sessions.find((session) => session.id === activeId);
+    const target = workspace ?? current?.workspace ?? activeWorkspace ?? undefined;
+    const created = await api.createSession({ workspace: target });
     setSessions((prev) => [created, ...prev]);
     setActiveId(created.id);
     if (window.innerWidth < 900) setSidebarOpen(false);
@@ -330,10 +339,16 @@ export default function App() {
    * including it, which works for a user prompt too — consecutive user turns
    * are valid, so "say it differently" does not need a reply first.
    */
-  const branchAt = async (entryId: string) => {
+  const branchAt = async (message: ChatMessage) => {
     if (!activeId) return;
     try {
-      const created = await api.branchSession(activeId, { entry_id: entryId });
+      const created = await api.branchSession(activeId, {
+        entry_id: message.id,
+        // A bubble drawn during the run may still carry a client-side id; the
+        // role and text let the server find the entry it became.
+        entry_role: message.role,
+        entry_content: message.content,
+      });
       setSessions((prev) => [created, ...prev]);
       setActiveId(created.id);
       toast.success("已从这条消息分叉");
@@ -361,13 +376,19 @@ export default function App() {
         <SessionSidebar
           sessions={sessions}
           archived={archived}
+          workspaces={workspaces.map((item) => ({
+            name: item.name,
+            path: item.path,
+          }))}
+          activeWorkspace={active?.workspace ?? activeWorkspace}
           activeId={activeId}
           runningIds={runningIds}
           onSelect={(id) => {
             setActiveId(id);
             if (window.innerWidth < 900) setSidebarOpen(false);
           }}
-          onCreate={createSession}
+          onCreate={() => void createSession()}
+          onCreateIn={(path) => void createSession(path)}
           onDelete={deleteSession}
           onRename={renameSession}
           onArchive={archiveSession}
@@ -482,7 +503,7 @@ export default function App() {
             }))}
             models={models}
             activeAgent={active?.agent ?? activeAgent}
-            activeModel={activeModel}
+            activeModel={active?.model ?? activeModel}
             contextVersion={contextVersion}
             onRunningChange={(value) => {
               if (activeId) markRunning(activeId, value);
@@ -501,8 +522,9 @@ export default function App() {
               setActiveAgent(name);
             }}
             onSelectModel={async (key) => {
-              await api.activateModel(key);
-              setActiveModel(key);
+              // Per session: the model belongs to this conversation, so
+              // switching it here must not re-point every other one.
+              await configureSession({ model: key });
             }}
             onModelsChanged={() => {
               void refreshContext();
@@ -511,8 +533,8 @@ export default function App() {
               setSettingsTab(tab ?? "providers");
               setSettingsOpen(true);
             }}
-            onBranch={(entryId) => {
-              void branchAt(entryId);
+            onBranch={(message) => {
+              void branchAt(message);
             }}
           />
         ) : (

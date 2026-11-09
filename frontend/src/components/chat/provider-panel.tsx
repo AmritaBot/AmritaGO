@@ -6,9 +6,11 @@
  * actually work and removes the old "preset: auto" trap, where a wrong base
  * URL silently produced a preset that could never run.
  *
- * "Sniff" asks the endpoint for its model list. It is strictly a convenience:
- * a gateway that does not implement `/models` is not broken, so a failed probe
- * shows the reason and the form stays typeable.
+ * The model list is fetched from the endpoint: adapters publish it, so the
+ * user picks instead of typing ids. The reply also carries what the endpoint
+ * says about each model (context window, image input), and those numbers are
+ * used to fill the entry. A gateway that does not implement `/models` is not
+ * broken, so a failed fetch still leaves the form typeable.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -17,10 +19,12 @@ import {
   CircleAlertIcon,
   CopyIcon,
   Loader2Icon,
+  PencilIcon,
   PlusIcon,
   RadarIcon,
   SaveIcon,
   Trash2Icon,
+  XIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -33,6 +37,7 @@ import {
   api,
   type ModelEntry,
   type ModelOption,
+  type ProbeModelInfo,
   type Provider,
 } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
@@ -101,7 +106,9 @@ export function ProviderPanel({
 }) {
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [modelDraft, setModelDraft] = useState<ModelEntry>(EMPTY_MODEL);
-  const [probed, setProbed] = useState<string[]>([]);
+  // The id of the entry being edited, or null while adding a new one.
+  const [editingModel, setEditingModel] = useState<string | null>(null);
+  const [probed, setProbed] = useState<ProbeModelInfo[]>([]);
   const [probing, setProbing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [probeError, setProbeError] = useState<string | null>(null);
@@ -126,38 +133,50 @@ export function ProviderPanel({
     onReload();
   }, [onReload]);
 
-  const probe = async () => {
-    // Probing needs a saved provider so its server-side key stays out of the browser.
-    if (!draft.id) {
-      toast.error("先保存 Provider，再嗅探模型");
-      return;
-    }
+  /**
+   * Ask the saved provider which models it serves.
+   *
+   * ``quiet`` is for the automatic fetch after a save: a gateway without
+   * ``/models`` is not an error the user needs a toast about, it just means
+   * the list has to be typed in by hand.
+   */
+  const runProbe = async (
+    providerId: string,
+    baseUrl?: string,
+    protocol?: string,
+    quiet = false,
+  ) => {
     setProbing(true);
-    setProbeError(null);
+    if (!quiet) setProbeError(null);
     try {
-      const result = await api.probeProvider(
-        draft.id,
-        draft.base_url || undefined,
-        draft.protocol,
-      );
+      const result = await api.probeProvider(providerId, baseUrl, protocol);
       if (!result.ok) {
         setProbed([]);
-        setProbeError(result.error ?? "嗅探失败");
+        if (!quiet) setProbeError(result.error ?? "获取模型列表失败");
         return;
       }
-      setProbed(result.models);
+      setProbed(result.details ?? result.models.map((id) => ({ id })));
       if (result.models.length === 0) {
-        setProbeError("接口返回空列表，可手动填写模型 ID。");
-      } else {
+        if (!quiet) setProbeError("接口返回空列表，可手动填写模型 ID。");
+      } else if (!quiet) {
         toast.success(
           `发现 ${result.models.length} 个模型${result.latency_ms ? `（${result.latency_ms} ms）` : ""}`,
         );
       }
     } catch (error) {
-      setProbeError(String(error).replace(/^Error:\s*/, ""));
+      if (!quiet) setProbeError(String(error).replace(/^Error:\s*/, ""));
     } finally {
       setProbing(false);
     }
+  };
+
+  const probe = () => {
+    // Fetching needs a saved provider so its server-side key stays in the browser's blind spot.
+    if (!draft.id) {
+      toast.error("先保存 Provider，再获取模型列表");
+      return;
+    }
+    void runProbe(draft.id, draft.base_url || undefined, draft.protocol);
   };
 
   const saveProvider = async () => {
@@ -188,6 +207,8 @@ export function ProviderPanel({
       setCreating(false);
       reload();
       toast.success("Provider 已保存，密钥已加密存储");
+      // Fetch right away: the list is the normal way to add a model now.
+      void runProbe(saved.id, saved.base_url, saved.protocol, true);
     } catch (error) {
       toast.error(String(error).replace(/^Error:\s*/, ""));
     } finally {
@@ -195,8 +216,8 @@ export function ProviderPanel({
     }
   };
 
-  const addModel = async (modelId?: string) => {
-    const id = (modelId ?? modelDraft.id).trim();
+  const addModel = async (entry?: ProbeModelInfo) => {
+    const id = (entry?.id ?? modelDraft.id).trim();
     if (!selected) {
       toast.error("先保存 Provider");
       return;
@@ -206,10 +227,49 @@ export function ProviderPanel({
       return;
     }
     try {
-      await api.addProviderModel(selected, { ...modelDraft, id });
+      await api.addProviderModel(selected, {
+        ...modelDraft,
+        id,
+        // What the endpoint reported wins over an empty form field.
+        max_context: entry?.max_context ?? modelDraft.max_context,
+        multimodal: entry?.multimodal ?? modelDraft.multimodal,
+      });
       setModelDraft(EMPTY_MODEL);
+      setEditingModel(null);
       reload();
       toast.success(`已添加 ${id}`);
+    } catch (error) {
+      toast.error(String(error).replace(/^Error:\s*/, ""));
+    }
+  };
+
+  /** Load one stored entry into the form so its fields can be corrected. */
+  const beginEditModel = (entry: ModelEntry) => {
+    setEditingModel(entry.id);
+    setModelDraft({ ...entry });
+  };
+
+  const cancelEditModel = () => {
+    setEditingModel(null);
+    setModelDraft(EMPTY_MODEL);
+  };
+
+  /** The form saves whichever it is showing: a new entry, or the edited one. */
+  const saveModel = async () => {
+    if (!selected) {
+      toast.error("先保存 Provider");
+      return;
+    }
+    if (editingModel === null) {
+      await addModel();
+      return;
+    }
+    try {
+      await api.updateProviderModel(selected, { ...modelDraft, id: editingModel });
+      setModelDraft(EMPTY_MODEL);
+      setEditingModel(null);
+      reload();
+      toast.success(`已保存 ${editingModel}`);
     } catch (error) {
       toast.error(String(error).replace(/^Error:\s*/, ""));
     }
@@ -386,7 +446,7 @@ export function ProviderPanel({
             ) : (
               <RadarIcon className="size-3.5" />
             )}
-            嗅探模型
+            获取模型列表
           </Button>
           {provider && (
             <Button
@@ -432,26 +492,37 @@ export function ProviderPanel({
         {probed.length > 0 && (
           <div className="flex flex-col gap-1 rounded-md border border-border p-2">
             <span className="text-[11px] text-muted-foreground">
-              端点报告的模型（点击加入）：
+              端点报告的模型（点击加入，上下文等元数据一并带入）：
             </span>
             <div className="flex max-h-32 flex-wrap gap-1 overflow-y-auto">
-              {probed.map((name) => {
+              {probed.map((item) => {
                 const exists = provider?.models.some(
-                  (item) => item.id === name,
+                  (entry) => entry.id === item.id,
                 );
                 return (
                   <button
-                    key={name}
+                    key={item.id}
                     type="button"
                     disabled={exists || !selected}
-                    onClick={() => addModel(name)}
+                    onClick={() => addModel(item)}
+                    title={item.label || item.id}
                     className={cn(
-                      "rounded border border-border px-1.5 py-0.5 font-mono text-[11px] transition-colors",
+                      "flex items-center gap-1 rounded border border-border px-1.5 py-0.5 font-mono text-[11px] transition-colors",
                       exists ? "cursor-default opacity-40" : "hover:bg-accent",
                       !selected && "cursor-not-allowed opacity-40",
                     )}
                   >
-                    {name}
+                    {item.id}
+                    {item.max_context ? (
+                      <span className="text-[10px] text-muted-foreground">
+                        ctx {item.max_context}
+                      </span>
+                    ) : null}
+                    {item.multimodal ? (
+                      <span className="text-[10px] text-muted-foreground">
+                        图像
+                      </span>
+                    ) : null}
                   </button>
                 );
               })}
@@ -505,6 +576,15 @@ export function ProviderPanel({
                 <Button
                   size="icon-sm"
                   variant="ghost"
+                  onClick={() => beginEditModel(entry)}
+                  aria-label="编辑模型"
+                  title="编辑这个模型的参数"
+                >
+                  <PencilIcon className="size-3.5" />
+                </Button>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
                   onClick={() => removeModel(entry.id)}
                   aria-label="删除模型"
                 >
@@ -532,15 +612,16 @@ export function ProviderPanel({
           <div className="grid grid-cols-4 gap-2 rounded-md border border-dashed border-border p-2">
             <div className="col-span-2 flex flex-col gap-1">
               <Label htmlFor="m-id" className="text-[11px]">
-                模型 ID
+                {editingModel ? "正在编辑" : "模型 ID"}
               </Label>
               <Input
                 id="m-id"
-                value={modelDraft.id}
+                value={editingModel ?? modelDraft.id}
+                disabled={editingModel !== null}
                 onChange={(event) =>
                   setModelDraft((prev) => ({ ...prev, id: event.target.value }))
                 }
-                placeholder="填入服务商提供的模型 ID"
+                placeholder="从上方列表选，或填服务商提供的 ID"
                 className="h-7 font-mono text-xs"
               />
             </div>
@@ -610,15 +691,23 @@ export function ProviderPanel({
                   </Label>
                 </div>
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => addModel()}
-                disabled={!selected}
-              >
-                <PlusIcon />
-                添加
-              </Button>
+              <div className="flex items-center gap-1.5">
+                {editingModel !== null && (
+                  <Button size="sm" variant="ghost" onClick={cancelEditModel}>
+                    <XIcon />
+                    取消
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void saveModel()}
+                  disabled={!selected}
+                >
+                  {editingModel === null ? <PlusIcon /> : <SaveIcon />}
+                  {editingModel === null ? "添加" : "保存修改"}
+                </Button>
+              </div>
             </div>
           </div>
         </div>

@@ -123,6 +123,7 @@ class SessionCreateRequest(BaseModel):
     # ``None`` means "inherit the current default".
     workspace: str | None = None
     agent: str | None = None
+    model: str | None = None
 
 
 class SessionConfigRequest(BaseModel):
@@ -130,6 +131,7 @@ class SessionConfigRequest(BaseModel):
 
     workspace: str | None = None
     agent: str | None = None
+    model: str | None = None
 
 
 class SettingsUpdate(BaseModel):
@@ -1115,6 +1117,7 @@ async def post_session(payload: SessionCreateRequest) -> dict[str, Any]:
         # Snapshot defaults so this session remains independent of later changes.
         workspace=payload.workspace or settings.active_workspace,
         agent=payload.agent or settings.active_agent,
+        model=payload.model or settings.active_model,
     )
     return {**meta.model_dump(), "running": False}
 
@@ -1158,7 +1161,12 @@ async def set_session_settings(session_id: str, payload: SessionConfigRequest) -
         if resolved is None:
             raise HTTPException(status_code=400, detail="workspace not found")
         workspace = str(resolved)
-    meta = await set_session_config(session_id, workspace=workspace, agent=payload.agent)
+    meta = await set_session_config(
+        session_id,
+        workspace=workspace,
+        agent=payload.agent,
+        model=payload.model,
+    )
     if meta is None:
         raise HTTPException(status_code=404, detail="session not found")
     return {**meta.model_dump(), "running": HUB.busy(meta.id)}
@@ -1236,6 +1244,10 @@ class BranchPayload(BaseModel):
     title: str | None = None
     # Branch at this bubble, keeping it. Works for a user message too.
     entry_id: str | None = None
+    # Fallback when ``entry_id`` is a client-side id that never reached disk:
+    # the last entry with this role and text is the bubble being forked.
+    entry_role: str | None = None
+    entry_content: str | None = None
 
 
 class MessageEditPayload(BaseModel):
@@ -1289,6 +1301,8 @@ async def branch_session_endpoint(session_id: str, payload: BranchPayload) -> di
             index=payload.index,
             title=payload.title,
             entry_id=payload.entry_id,
+            entry_role=payload.entry_role,
+            entry_content=payload.entry_content,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from None
@@ -1652,8 +1666,11 @@ async def chat_socket(websocket: WebSocket) -> None:
             )
             # Handle registered commands before checking model availability.
             resolved: ModelPreset | None = None
+            model_key: str | None = None
             if COMMANDS.match(message) is None:
-                model_key = payload.get("model") or settings.active_model
+                # The session's own model wins over the app-wide default: two
+                # conversations may legitimately run on different models.
+                model_key = payload.get("model") or meta.model or settings.active_model
                 resolved = await resolve_preset(model_key)
                 if resolved is None:
                     await websocket.send_text(
@@ -1680,6 +1697,12 @@ async def chat_socket(websocket: WebSocket) -> None:
                         )
                     )
                     continue
+
+            if model_key and meta.model != model_key:
+                # Remember what this conversation answers with; the next turn
+                # (and the composer chip) reads it from here.
+                meta.model = model_key
+                await save_meta(meta)
 
             # Bound to a name so the closure captures a non-optional value.
             model = resolved

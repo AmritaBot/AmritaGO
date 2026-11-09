@@ -423,11 +423,78 @@ async def list_models() -> list[dict[str, Any]]:
 # Probing
 
 
+class ProbeModel(BaseModel):
+    """One model the endpoint reports, with whatever it says about it.
+
+    Endpoints disagree on the field names, but most of them publish a context
+    window and whether images are accepted. Reading them here means the user
+    does not have to type numbers the provider already told us.
+    """
+
+    id: str
+    label: str = ""
+    max_context: int | None = None
+    multimodal: bool | None = None
+
+
 class ProbeResult(BaseModel):
     ok: bool
     models: list[str] = Field(default_factory=list)
+    # ``models`` stays a plain id list for callers that only need names; the
+    # details carry the metadata the form fills in.
+    details: list[ProbeModel] = Field(default_factory=list)
     error: str | None = None
     latency_ms: int | None = None
+
+
+def _positive_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)) and value > 0:
+        return int(value)
+    if isinstance(value, str) and value.isdigit() and int(value) > 0:
+        return int(value)
+    return None
+
+
+def _context_of(item: dict[str, Any]) -> int | None:
+    """The context window, under whichever name this endpoint uses."""
+    for key in (
+        "context_length",
+        "max_context",
+        "max_input_tokens",
+        "input_token_limit",
+        "context_window",
+        "max_context_length",
+    ):
+        found = _positive_int(item.get(key))
+        if found is not None:
+            return found
+    for key in ("top_provider", "limits", "metadata"):
+        nested = item.get(key)
+        if isinstance(nested, dict):
+            found = _context_of(nested)
+            if found is not None:
+                return found
+    return None
+
+
+def _multimodal_of(item: dict[str, Any]) -> bool | None:
+    """Whether the model takes image input, when the endpoint says so."""
+    for key in ("input_modalities", "modalities", "supported_modalities"):
+        value = item.get(key)
+        if isinstance(value, list):
+            return "image" in [str(part).lower() for part in value]
+        if isinstance(value, str):
+            return "image" in value.lower()
+    architecture = item.get("architecture")
+    if isinstance(architecture, dict):
+        value = architecture.get("input_modalities") or architecture.get("modality")
+        if isinstance(value, list):
+            return "image" in [str(part).lower() for part in value]
+        if isinstance(value, str):
+            return "image" in value.lower()
+    return None
 
 
 async def probe_models(
@@ -488,22 +555,37 @@ async def probe_models(
     if not isinstance(items, list):
         return ProbeResult(ok=False, error="unexpected response shape", latency_ms=latency)
 
-    names: list[str] = []
+    details: dict[str, ProbeModel] = {}
     for item in items:
         if isinstance(item, str):
-            names.append(item)
-        elif isinstance(item, dict):
-            name = item.get("id") or item.get("name")
-            if isinstance(name, str):
-                names.append(name)
-    names = sorted(set(names))
-    return ProbeResult(ok=True, models=names, latency_ms=latency)
+            details.setdefault(item, ProbeModel(id=item))
+            continue
+        if not isinstance(item, dict):
+            continue
+        name = item.get("id") or item.get("name")
+        if not isinstance(name, str) or not name:
+            continue
+        label = item.get("display_name") or item.get("label") or ""
+        details[name] = ProbeModel(
+            id=name,
+            label=str(label) if isinstance(label, str) and label != name else "",
+            max_context=_context_of(item),
+            multimodal=_multimodal_of(item),
+        )
+    ordered = [details[key] for key in sorted(details)]
+    return ProbeResult(
+        ok=True,
+        models=[entry.id for entry in ordered],
+        details=ordered,
+        latency_ms=latency,
+    )
 
 
 __all__ = [
     "PROVIDERS",
     "Credentials",
     "ModelEntry",
+    "ProbeModel",
     "ProbeResult",
     "Provider",
     "ProviderError",
