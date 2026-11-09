@@ -19,6 +19,7 @@ from typing import Any
 
 from amrita_sense.logging import logger
 
+from app.core.providers import resolve_preset
 from app.runtime import events
 from app.runtime.audit import BROKER
 from app.runtime.limit_gate import LIMITS
@@ -55,6 +56,8 @@ class EditOutcome:
     context_messages: int
     # A prompt queued behind the edited turn was vetoed.
     dropped_prompt: bool = False
+    # Model the conversation is pointed at for the resent turn.
+    model: str | None = None
 
 
 def _content_text(content: Any) -> str:
@@ -166,6 +169,7 @@ async def rewrite_last_prompt(
     content: str,
     *,
     expected: str | None = None,
+    model: str | None = None,
 ) -> EditOutcome:
     """Roll the session back to before its last prompt.
 
@@ -180,6 +184,13 @@ async def rewrite_last_prompt(
     meta = await get_meta(session_id)
     if meta is None:
         raise MessageEditError("会话不存在", status=404)
+
+    # Re-point the session before the turn runs, so the resent prompt and the
+    # composer chip agree on what answered it.
+    if model is not None:
+        if await resolve_preset(model) is None:
+            raise MessageEditError("这个模型不可用，请重新选择", status=400)
+        meta.model = model
 
     dropped = await _end_running(session_id)
 
@@ -227,6 +238,7 @@ async def rewrite_last_prompt(
         removed_messages=removed_messages,
         context_messages=len(memory.messages),
         dropped_prompt=dropped,
+        model=meta.model,
     )
     return EditOutcome(
         entry_id=target.id,
@@ -236,6 +248,7 @@ async def rewrite_last_prompt(
         removed_messages=removed_messages,
         context_messages=len(memory.messages),
         dropped_prompt=dropped,
+        model=meta.model,
     )
 
 

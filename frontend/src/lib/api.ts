@@ -122,6 +122,12 @@ export interface AppSettings {
   active_workflow: string | null;
   active_workspace: string | null;
   enabled_skills: string[] | null;
+  /** faskill: seconds a skill script may run before it is killed. */
+  skill_script_timeout: number;
+  /** faskill: how many parsed skills the context caches. */
+  skill_cache_size: number;
+  /** faskill: manifest file that marks a skill directory as a plugin. */
+  skill_plugin_manifest: string;
   enabled_mcp: string[];
   /** Tool name globs removed from every run's tool pool. */
   disabled_tools: string[];
@@ -205,6 +211,7 @@ export interface ProbeModelInfo {
   id: string;
   label?: string;
   max_context?: number | null;
+  max_output?: number | null;
   multimodal?: boolean | null;
 }
 
@@ -1056,7 +1063,10 @@ export const api = {
    * The server rolls the context back to before it and drops the failed
    * exchange; the caller then sends the edited text as a normal turn.
    */
-  editMessage: (id: string, payload: { content: string; expected?: string }) =>
+  editMessage: (
+    id: string,
+    payload: { content: string; expected?: string; model?: string },
+  ) =>
     request<{
       ok: boolean;
       entry_id: string;
@@ -1065,6 +1075,8 @@ export const api = {
       removed_entries: number;
       removed_messages: number;
       context_messages: number;
+      /** Model the conversation is pointed at after the edit. */
+      model: string | null;
     }>(`/sessions/${id}/messages/edit`, {
       method: "POST",
       body: JSON.stringify(payload),

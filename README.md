@@ -1,6 +1,6 @@
 # AmritaGO
 
-![](amria/amria-nobg-with-logo.png)
+<img src="amria/amria-nobg-with-logo.png" width="511" alt="Amria" />
 
 > Amria——项目吉祥物
 >

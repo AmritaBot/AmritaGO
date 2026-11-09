@@ -27,6 +27,10 @@ class AppSettings(BaseModel):
     active_workspace: str | None = None
     """Workspace the UI is currently pointed at; ``None`` -> the project root."""
     enabled_skills: list[str] | None = None
+    # faskill: how a skill's scripts are run and how the catalogue is cached.
+    skill_script_timeout: int = 30
+    skill_cache_size: int = 100
+    skill_plugin_manifest: str = ".claude-plugin/plugin.json"
     """``None`` -> every discovered skill is enabled. ``[]`` -> none."""
     enabled_mcp: list[str] = Field(default_factory=list)
     """MCP server names (keys of ``mcp.json``) that should be connected."""

@@ -57,6 +57,23 @@ class SkillInfo:
         return self.path.parent
 
 
+def _skill_options() -> dict[str, Any]:
+    """The faskill knobs, as saved in settings.
+
+    Read synchronously because discovery runs in a worker thread and is
+    cached; a change in settings is picked up by the next discovery, which
+    compares the directory signature.
+    """
+    from app.core.settings import load_settings_sync
+
+    settings = load_settings_sync()
+    return {
+        "default_script_timeout": settings.skill_script_timeout,
+        "max_cache_size": settings.skill_cache_size,
+        "plugin_manifest_name": settings.skill_plugin_manifest or ".claude-plugin/plugin.json",
+    }
+
+
 def _skill_dirs() -> list[Path]:
     """Workspace first: faskill keeps the first source for a duplicate name."""
     PATHS.ensure()
@@ -76,7 +93,13 @@ def _signature(directories: list[Path]) -> tuple[Any, ...]:
 
 
 def _build_context(directories: list[Path]) -> SkillContext:
-    context = create_context(skill_dirs=[str(directory) for directory in directories])
+    options = _skill_options()
+    context = create_context(
+        skill_dirs=[str(directory) for directory in directories],
+        default_script_timeout=options["default_script_timeout"],
+        max_cache_size=options["max_cache_size"],
+        plugin_manifest_name=options["plugin_manifest_name"],
+    )
     context.discover()
     return context
 

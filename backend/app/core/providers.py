@@ -434,6 +434,7 @@ class ProbeModel(BaseModel):
     id: str
     label: str = ""
     max_context: int | None = None
+    max_output: int | None = None
     multimodal: bool | None = None
 
 
@@ -497,6 +498,74 @@ def _multimodal_of(item: dict[str, Any]) -> bool | None:
     return None
 
 
+def _adapter_for(
+    base_url: str, api_key: str, protocol: str
+) -> tuple[Any, Any] | None:
+    """The adapter's own catalogue, when it can fetch one.
+
+    AmritaCore 1.4 gives every built-in adapter ``fetch_models``, and it reads
+    the metadata each provider publishes (context window, modalities). Using it
+    means one code path knows the wire format; the raw HTTP probe below stays
+    as the fallback for protocols we have no adapter for.
+    """
+    try:
+        from amrita_core.base.adapter import AdapterManager
+        from amrita_core.types import ModelPreset
+    except ImportError:  # pragma: no cover - core without the feature
+        return None
+    adapter = AdapterManager().safe_get_adapter(protocol)
+    # ``features`` and ``fetch_models`` only exist from core 1.4 on; an older
+    # core simply falls through to the raw probe.
+    features = getattr(adapter, "features", None) if adapter is not None else None
+    if adapter is None or not getattr(features, "fetch_models", False):
+        return None
+    return adapter, ModelPreset(
+        model="",
+        name="probe",
+        base_url=base_url,
+        api_key=api_key,
+        protocol=protocol,
+    )
+
+
+async def _fetch_via_adapter(
+    base_url: str, api_key: str, protocol: str
+) -> list[ProbeModel] | None:
+    resolved = _adapter_for(base_url, api_key, protocol)
+    if resolved is None:
+        return None
+    adapter, preset = resolved
+    try:
+        infos = await adapter.fetch_models(preset)
+    except Exception as exc:  # adapter errors are normalized but still vary
+        logger.debug(f"adapter fetch_models failed for {protocol}: {exc}")
+        return None
+    out: list[ProbeModel] = []
+    for info in infos:
+        # ``ModelInfo`` only names the common fields; the rest of the provider's
+        # payload is kept as extras, so the same helpers the raw probe uses can
+        # still find a context window under ``context_length`` or a nested key.
+        raw = info.model_dump() if hasattr(info, "model_dump") else {}
+        modalities = getattr(info, "input_modalities", None)
+        multimodal: bool | None = None
+        if modalities:
+            multimodal = "image" in [str(part).lower() for part in modalities]
+        else:
+            multimodal = _multimodal_of(raw)
+        out.append(
+            ProbeModel(
+                id=info.id,
+                label=getattr(info, "name", None) or str(raw.get("display_name") or ""),
+                max_context=getattr(info, "context_window", None) or _context_of(raw),
+                max_output=getattr(info, "max_output_tokens", None)
+                or _positive_int(raw.get("max_output_tokens")),
+                multimodal=multimodal,
+            )
+        )
+    out.sort(key=lambda entry: entry.id)
+    return out
+
+
 async def probe_models(
     base_url: str,
     api_key: str,
@@ -518,6 +587,16 @@ async def probe_models(
     base = base_url.rstrip("/")
     if not base:
         return ProbeResult(ok=False, error="base URL is empty")
+
+    started = time.monotonic()
+    via_adapter = await _fetch_via_adapter(base, api_key, protocol)
+    if via_adapter:
+        return ProbeResult(
+            ok=True,
+            models=[entry.id for entry in via_adapter],
+            details=via_adapter,
+            latency_ms=int((time.monotonic() - started) * 1000),
+        )
     if protocol == "anthropic":
         url = f"{base}/v1/models"
         headers = {

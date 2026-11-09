@@ -232,6 +232,7 @@ export function ProviderPanel({
         id,
         // What the endpoint reported wins over an empty form field.
         max_context: entry?.max_context ?? modelDraft.max_context,
+        max_output: entry?.max_output ?? modelDraft.max_output,
         multimodal: entry?.multimodal ?? modelDraft.multimodal,
       });
       setModelDraft(EMPTY_MODEL);
@@ -420,6 +421,7 @@ export function ProviderPanel({
             >
               <option value="openai">openai</option>
               <option value="anthropic">anthropic</option>
+              <option value="openai-responses">openai-responses</option>
             </select>
           </div>
         </div>

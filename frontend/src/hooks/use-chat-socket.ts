@@ -1128,7 +1128,12 @@ export function useChatSocket(sessionId: string | null) {
    * the edit arrived mid-turn.
    */
   const editPrompt = useCallback(
-    async (messageId: string, content: string) => {
+    async (
+      messageId: string,
+      content: string,
+      attachments?: ChatMessage["attachments"],
+      model?: string | null,
+    ) => {
       const text = content.trim();
       const list = messagesRef.current;
       const index = list.findIndex((message) => message.id === messageId);
@@ -1140,6 +1145,8 @@ export function useChatSocket(sessionId: string | null) {
             content: text,
             // A mismatch means this transcript is stale; the server refuses it.
             expected: target.content || undefined,
+            // Re-pointing the turn is part of the edit, not a separate action.
+            model: model ?? undefined,
           });
         } catch (error) {
           toast.error(String(error).replace(/^Error:\s*/, ""));
@@ -1151,7 +1158,7 @@ export function useChatSocket(sessionId: string | null) {
       const resend = () => {
         updateQueued(null);
         setMessages((prev) => prev.slice(0, index));
-        const sent = send(text, target.attachments ?? []);
+        const sent = send(text, attachments ?? target.attachments ?? [], model);
         if (!sent) {
           // The rollback already happened on disk; resync so the screen agrees.
           void reload();

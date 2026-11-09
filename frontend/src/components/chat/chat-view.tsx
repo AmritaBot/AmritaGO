@@ -11,6 +11,7 @@ import {
   Loader2Icon,
   PencilIcon,
   RotateCcwIcon,
+  XIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -40,6 +41,9 @@ import { api } from "@/lib/api";
 import type { ModelOption, RunningTool, StopMode } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
+
+/** One file on a prompt; the bubble's list is optional, this is the item. */
+type EditAttachment = NonNullable<ChatMessage["attachments"]>[number];
 
 /** Least -> most permissive; mirrors the backend's ordering. */
 const ACCESS_ORDER: Permission[] = ["readonly", "workspace", "full"];
@@ -249,6 +253,8 @@ function endsFoldedHistory(message: ChatMessage): boolean {
 
 function MessageBubble({
   message,
+  models = [],
+  defaultModel = null,
   onBranch,
   onRetry,
   onEdit,
@@ -263,8 +269,19 @@ function MessageBubble({
   /**
    * Rewrite this prompt and send it again. Only offered for the last prompt
    * the agent never answered.
+   *
+   * Attachments and the model are part of the prompt: the edit form can drop
+   * a picture, add a file, or answer the same question with another model.
    */
-  onEdit?: (text: string) => void;
+  onEdit?: (
+    text: string,
+    attachments: EditAttachment[],
+    model: string | null,
+  ) => void;
+  /** Switchable models, so the edit form can re-point this turn. */
+  models?: ModelOption[];
+  /** Model this conversation uses now; the edit form starts from it. */
+  defaultModel?: string | null;
   /** Live tool calls, so a running row can offer 取消. */
   runningTools?: Record<string, RunningTool>;
   onCancelTool?: (tool: RunningTool) => void;
@@ -273,6 +290,10 @@ function MessageBubble({
   // Keep the single editable prompt draft local to its message.
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
+  // The edit form owns its own copy: dropping a file must not touch the bubble.
+  const [editFiles, setEditFiles] = useState<EditAttachment[]>([]);
+  const [editModel, setEditModel] = useState<string | null>(null);
+  const [editUploading, setEditUploading] = useState(false);
   const isUser = message.role === "user";
   // A step-driven workflow narrates at every step; only the tail is the answer.
   const { notes, answer } = useMemo(
@@ -301,7 +322,69 @@ function MessageBubble({
       const text = draft.trim();
       if (!text || !onEdit) return;
       setEditing(false);
-      onEdit(text);
+      onEdit(text, editFiles, editModel);
+    };
+
+    const beginEdit = () => {
+      setDraft(message.content);
+      setEditFiles(message.attachments ?? []);
+      setEditModel(defaultModel);
+      setEditing(true);
+    };
+
+    /** Same upload rules as the composer: images as data URLs, text as files. */
+    const addEditFiles = async (files: File[]) => {
+      setEditUploading(true);
+      for (const file of files) {
+        try {
+          if (file.type.startsWith("image/")) {
+            if (file.size > 8 * 1024 * 1024) {
+              toast.error(`${file.name} 超过 8 MiB，已跳过`);
+              continue;
+            }
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(String(reader.result));
+              reader.onerror = () => reject(reader.error);
+              reader.readAsDataURL(file);
+            });
+            const stored = await api.uploadAttachment({
+              kind: "image",
+              name: file.name,
+              data_url: dataUrl,
+            });
+            setEditFiles((prev) => [
+              ...prev,
+              {
+                id: stored.id,
+                kind: "image",
+                name: stored.name,
+                url: stored.url ?? dataUrl,
+                path: stored.path,
+              },
+            ]);
+          } else {
+            const text = await file.text();
+            const stored = await api.uploadAttachment({
+              kind: "text",
+              name: file.name,
+              text,
+            });
+            setEditFiles((prev) => [
+              ...prev,
+              {
+                id: stored.id,
+                kind: "text",
+                name: stored.name,
+                path: stored.path,
+              },
+            ]);
+          }
+        } catch (error) {
+          toast.error(`${file.name}: ${String(error).replace(/^Error:\s*/, "")}`);
+        }
+      }
+      setEditUploading(false);
     };
 
     if (editing) {
@@ -325,18 +408,72 @@ function MessageBubble({
             aria-label="编辑消息"
             className="w-full max-w-[min(80%,42rem)] resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm leading-relaxed outline-none focus:border-ring/60"
           />
-          <div className="flex items-center gap-1.5">
-            {(message.attachments ?? []).length > 0 && (
-              <span className="text-[11px] text-muted-foreground">
-                附件会一并重发
+          <div className="flex w-full max-w-[min(80%,42rem)] flex-wrap items-center gap-1.5">
+            {editFiles.map((item) => (
+              <span
+                key={item.id}
+                className="flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[11px]"
+              >
+                <span className="max-w-[10rem] truncate">{item.name}</span>
+                <button
+                  type="button"
+                  aria-label={`移除 ${item.name}`}
+                  onClick={() =>
+                    setEditFiles((prev) =>
+                      prev.filter((entry) => entry.id !== item.id),
+                    )
+                  }
+                  className="text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <XIcon className="size-3" />
+                </button>
               </span>
+            ))}
+            <label
+              className={cn(
+                "cursor-pointer rounded-md border border-dashed border-border px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent",
+                editUploading && "pointer-events-none opacity-50",
+              )}
+            >
+              {editUploading ? "上传中…" : "添加附件"}
+              <input
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(event) => {
+                  const files = Array.from(event.target.files ?? []);
+                  event.target.value = "";
+                  void addEditFiles(files);
+                }}
+              />
+            </label>
+            {models.length > 0 && (
+              <select
+                aria-label="这一轮使用的模型"
+                value={editModel ?? ""}
+                onChange={(event) => setEditModel(event.target.value || null)}
+                className="max-w-[12rem] rounded-md border border-border bg-background px-1.5 py-0.5 text-[11px]"
+              >
+                <option value="">默认模型</option>
+                {models.map((model) => (
+                  <option key={model.key} value={model.key}>
+                    {model.label || model.model}
+                  </option>
+                ))}
+              </select>
             )}
-            <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
-              取消
-            </Button>
-            <Button size="sm" onClick={submitEdit} disabled={!draft.trim()}>
-              保存并重发
-            </Button>
+            <span className="ml-auto flex items-center gap-1.5">
+              <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
+                取消
+              </Button>
+              <Button
+                size="sm"
+                onClick={submitEdit}
+                disabled={!draft.trim() || editUploading}
+              >
+                保存并重发
+              </Button>
+            </span>
           </div>
         </div>
       );
@@ -389,10 +526,7 @@ function MessageBubble({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                onClick={() => {
-                  setDraft(message.content);
-                  setEditing(true);
-                }}
+                onClick={beginEdit}
                 aria-label="编辑并重发"
                 title="编辑并重发：回滚到这条消息之前，再按新内容重新提问"
               >
@@ -912,6 +1046,8 @@ export function ChatView({
             <div key={message.id} className="flex flex-col gap-2">
               <MessageBubble
                 message={message}
+                models={models}
+                defaultModel={activeModel}
                 onBranch={onBranch}
                 runningTools={runningTools}
                 onCancelTool={setCancelTarget}
@@ -919,8 +1055,8 @@ export function ChatView({
                 onRetry={message.error && !busy ? retry : undefined}
                 onEdit={
                   message.id === editableId
-                    ? (text) => {
-                        void editPrompt(message.id, text);
+                    ? (text, attachments, model) => {
+                        void editPrompt(message.id, text, attachments, model);
                       }
                     : undefined
                 }

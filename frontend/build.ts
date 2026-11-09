@@ -106,6 +106,21 @@ if (emittedHtml) {
   // ``./assets/foo.js`` (when Bun already namespaced it) -> ``/assets/foo.js``
   html = html.replace(/(src|href)="\.\/assets\//g, '$1="/assets/');
 
+  // With two entrypoints Bun may point the document at the HTML entry's chunk
+  // instead of the TSX entry-point. That chunk is a thin wrapper: the page
+  // loads, the module evaluates, and nothing mounts. Rewrite the script tag to
+  // the real entry-point, which is the only output that runs ``createRoot``.
+  const entryJs = result.outputs.find(
+    (output) => output.kind === "entry-point" && output.path.endsWith(".js"),
+  );
+  if (entryJs) {
+    const file = path.basename(entryJs.path);
+    html = html.replace(
+      /<script[^>]*src="[^"]*"[^>]*><\/script>/,
+      `<script type="module" crossorigin src="/assets/${file}"></script>`,
+    );
+  }
+
   await Bun.write(target, html);
   if (path.resolve(emittedHtml.path) !== path.resolve(target)) {
     await rm(emittedHtml.path, { force: true });

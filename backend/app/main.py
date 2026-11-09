@@ -137,6 +137,10 @@ class SessionConfigRequest(BaseModel):
 class SettingsUpdate(BaseModel):
     active_model: str | None = None
     enabled_skills: list[str] | None = None
+    # faskill knobs: script timeout, catalogue cache, plugin manifest name.
+    skill_script_timeout: int | None = Field(default=None, ge=1)
+    skill_cache_size: int | None = Field(default=None, ge=1)
+    skill_plugin_manifest: str | None = None
     enabled_mcp: list[str] | None = None
     active_workflow: str | None = None
     debug: bool | None = None
@@ -1252,6 +1256,8 @@ class BranchPayload(BaseModel):
 
 class MessageEditPayload(BaseModel):
     content: str
+    # Re-point this conversation at another model for the resent turn.
+    model: str | None = None
     # What the client believes it is editing; a mismatch means it is stale.
     expected: str | None = None
 
@@ -1270,6 +1276,7 @@ async def edit_message_endpoint(session_id: str, payload: MessageEditPayload) ->
             session_id,
             payload.content,
             expected=payload.expected,
+            model=payload.model,
         )
     except MessageEditError as exc:
         raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
@@ -1282,6 +1289,7 @@ async def edit_message_endpoint(session_id: str, payload: MessageEditPayload) ->
         "removed_messages": outcome.removed_messages,
         "context_messages": outcome.context_messages,
         "dropped_prompt": outcome.dropped_prompt,
+        "model": outcome.model,
     }
 
 

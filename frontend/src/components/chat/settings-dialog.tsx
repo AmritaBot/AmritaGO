@@ -58,6 +58,111 @@ export type SettingsTab =
  */
 const PANEL_SCROLL = "min-h-0 flex-1 overflow-y-auto pr-1";
 
+/**
+ * faskill's own knobs, which the app used to leave at library defaults.
+ *
+ * They are not per-skill settings: the timeout applies to every script a skill
+ * runs, and the cache size decides how many parsed SKILL.md files are kept in
+ * memory before re-reading.
+ */
+function FaskillOptions({
+  settings,
+  onSaved,
+}: {
+  settings: AppSettings;
+  onSaved: (settings: AppSettings) => void;
+}) {
+  const [scriptTimeout, setScriptTimeout] = useState(
+    String(settings.skill_script_timeout ?? 30),
+  );
+  const [cacheSize, setCacheSize] = useState(
+    String(settings.skill_cache_size ?? 100),
+  );
+  const [manifest, setManifest] = useState(
+    settings.skill_plugin_manifest ?? ".claude-plugin/plugin.json",
+  );
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    const timeout = Number(scriptTimeout);
+    const size = Number(cacheSize);
+    if (!Number.isFinite(timeout) || timeout < 1 || !Number.isFinite(size) || size < 1) {
+      toast.error("脚本超时和缓存数量都要是正整数");
+      return;
+    }
+    setSaving(true);
+    try {
+      const saved = await api.patchSettings({
+        skill_script_timeout: Math.round(timeout),
+        skill_cache_size: Math.round(size),
+        skill_plugin_manifest: manifest.trim() || ".claude-plugin/plugin.json",
+      });
+      onSaved(saved);
+      toast.success("技能选项已保存");
+    } catch (error) {
+      toast.error(`保存失败：${String(error).replace(/^Error:\s*/, "")}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-dashed border-border px-3 py-2">
+      <span className="text-xs font-medium">faskill 选项</span>
+      <div className="grid gap-2 sm:grid-cols-3">
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="skill-timeout" className="text-[11px]">
+            脚本超时（秒）
+          </Label>
+          <Input
+            id="skill-timeout"
+            type="number"
+            min={1}
+            value={scriptTimeout}
+            disabled={saving}
+            onChange={(event) => setScriptTimeout(event.target.value)}
+            className="h-7 text-xs"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="skill-cache" className="text-[11px]">
+            技能缓存条数
+          </Label>
+          <Input
+            id="skill-cache"
+            type="number"
+            min={1}
+            value={cacheSize}
+            disabled={saving}
+            onChange={(event) => setCacheSize(event.target.value)}
+            className="h-7 text-xs"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="skill-manifest" className="text-[11px]">
+            插件清单文件名
+          </Label>
+          <Input
+            id="skill-manifest"
+            value={manifest}
+            disabled={saving}
+            onChange={(event) => setManifest(event.target.value)}
+            className="h-7 font-mono text-xs"
+          />
+        </div>
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] text-muted-foreground">
+          改动在下一次技能发现时生效。
+        </span>
+        <Button size="sm" variant="outline" disabled={saving} onClick={() => void save()}>
+          保存
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function SettingsDialog({
   open,
   onOpenChange,
@@ -286,6 +391,9 @@ export function SettingsDialog({
               value="skills"
               className={cn(PANEL_SCROLL, "flex flex-col gap-2")}
             >
+              {settings && (
+                <FaskillOptions settings={settings} onSaved={setSettings} />
+              )}
               <div className="flex flex-col gap-1 text-xs text-muted-foreground">
                 <p>技能目录（工作区优先）：</p>
                 {skillDirs.map((dir) => (
