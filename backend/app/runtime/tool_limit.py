@@ -60,11 +60,34 @@ MAX_RECORDED_ARGS = 4000
 MAX_RECORDED_RESULT = 8000
 
 
-def _clip(text: str, limit: int) -> str:
+def _flatten(content: Any) -> str:
+    """One line of text out of a tool result.
+
+    Since AmritaCore 1.4 a tool result may be a list of content blocks, not
+    just a string. The transcript and the audit log are text, so non-text
+    blocks are described rather than dropped silently.
+    """
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return str(content)
+    parts: list[str] = []
+    for block in content:
+        text = getattr(block, "text", None)
+        if isinstance(text, str):
+            parts.append(text)
+            continue
+        kind = getattr(block, "type", None) or type(block).__name__
+        parts.append(f"[{kind}]")
+    return "\n".join(parts)
+
+
+def _clip(text: Any, limit: int) -> str:
     """Keep the head of a long payload, and say how much was dropped."""
-    if len(text) <= limit:
-        return text
-    return f"{text[:limit]}\n…（共 {len(text)} 字符，已截断）"
+    value = _flatten(text)
+    if len(value) <= limit:
+        return value
+    return f"{value[:limit]}\n…（共 {len(value)} 字符，已截断）"
 
 
 # What the transcript says when the user cuts a spent run off.
@@ -209,7 +232,9 @@ class LimitAwareStrategy(ReActAgentStrategy):
         self._suggested_stop = True
         self._store_final_response(UniResponse(role="assistant", content="", tool_calls=None))
 
-    async def call_tool(self, tool_call: ToolCall) -> str:
+    async def call_tool(self, tool_call: ToolCall) -> Any:
+        # A tool result is text or, since core 1.4, a list of content blocks;
+        # the full value goes back to the model, the clipped copy is recorded.
         """Execute one tool call, bounded in time and cancelable by the user.
 
         The call is announced on the stream first, so the UI offers 取消 for

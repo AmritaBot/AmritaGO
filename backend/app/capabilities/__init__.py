@@ -438,7 +438,9 @@ def _mcp_tools(source: MCPSource) -> list[ToolData]:
 
 
 def _mcp_runner(client: MCPClient, tool_name: str):
-    async def invoke(data: dict[str, Any]) -> str:
+    async def invoke(data: dict[str, Any]) -> Any:
+        # 1.4 lets an MCP tool answer with content blocks; pass them through
+        # instead of claiming a string the caller would have to un-wrap.
         return await client.simple_call(tool_name, data)
 
     return invoke
