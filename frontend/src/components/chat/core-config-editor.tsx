@@ -27,6 +27,8 @@ import {
 } from "@/components/chat/config-field";
 import { Button } from "@/components/ui/button";
 import { InfoHint } from "@/components/ui/info-hint";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { api, type CoreConfig, type CoreConfigField } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -72,6 +74,211 @@ const THINKING_NOTE = {
   title: "这里的思考是「非原生思考」",
   body: "只改提示词，不改请求参数，任何模型都能用。原生思考在「模型」页签按模型开关；两者同时开会让输出预算被分掉。",
 } as const;
+
+/**
+ * The handful of knobs worth a real control.
+ *
+ * The generic form below is honest but joyless: a ratio is a float, a limit is
+ * a bare number, and the only hint is the schema description. These rows are
+ * the ones people actually tune, so they get a unit, a slider where the value
+ * is a percentage, a switch where it is on/off, and one line saying what
+ * breaks when it is set wrong. The paths are matched against the loaded
+ * config, so a core version without one simply hides that row.
+ */
+type TuningKind = "number" | "percent" | "switch";
+
+interface TuningSpec {
+  path: string;
+  label: string;
+  hint: string;
+  kind: TuningKind;
+  min?: number;
+  max?: number;
+  step?: number;
+  unit?: string;
+}
+
+const TUNING: TuningSpec[] = [
+  {
+    path: "function_config.agent_tool_call_limit",
+    label: "工具调用轮数上限",
+    hint: "一轮工具调用的总次数。调小会让多步骤任务在中途被硬性中断。",
+    kind: "number",
+    min: 1,
+    max: 200,
+    unit: "轮",
+  },
+  {
+    path: "function_config.agent_tool_parallel_limit",
+    label: "工具并行上限",
+    hint: "同一轮里同时跑几个「安全」的工具调用。0 表示全部并行，1 表示串行；不安全的工具始终单独跑。",
+    kind: "number",
+    min: 0,
+    max: 32,
+    unit: "个",
+  },
+  {
+    path: "llm.compaction_trigger_ratio",
+    label: "压缩触发比例",
+    hint: "上下文用到这个比例就开始折叠早期消息。设得太大，可能还没压缩就超限了。",
+    kind: "percent",
+  },
+  {
+    path: "llm.slide_target_ratio",
+    label: "压缩后保留比例",
+    hint: "折叠后保留多少上下文。设得太小，模型会丢掉任务前提。",
+    kind: "percent",
+  },
+  {
+    path: "llm.memory_length_limit",
+    label: "历史消息条数上限",
+    hint: "超过这个条数的历史不再进入请求，Agent 会「忘记」更早的对话。",
+    kind: "number",
+    min: 0,
+    max: 2000,
+    unit: "条",
+  },
+  {
+    path: "function_config.use_minimal_context",
+    label: "精简上下文",
+    hint: "少发一部分历史，省钱，但 Agent 可能因此忘记之前的约定。",
+    kind: "switch",
+  },
+  {
+    path: "llm.enable_overflow_recovery",
+    label: "超限自动恢复",
+    hint: "上下文超限后自动压缩重试；关掉后超限直接失败。",
+    kind: "switch",
+  },
+];
+
+const TUNING_PATHS = new Set(TUNING.map((item) => item.path));
+
+function CoreTuning({
+  values,
+  onChange,
+  onSave,
+  saving,
+  dirty,
+}: {
+  values: Record<string, unknown>;
+  onChange: (path: string, value: unknown) => void;
+  onSave: () => void;
+  saving: boolean;
+  dirty: boolean;
+}) {
+  const rows = TUNING.filter((item) => values[item.path] !== undefined);
+  if (rows.length === 0) return null;
+  return (
+    <section className="flex flex-col gap-3 rounded-lg border border-border p-3">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-medium">常用设置</h3>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={saving || !dirty}
+          onClick={onSave}
+        >
+          {saving ? <Loader2Icon className="animate-spin" /> : <SaveIcon />}
+          保存
+        </Button>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {rows.map((item) => {
+          const value = values[item.path];
+          const id = `tune-${item.path.replace(/\./g, "-")}`;
+          if (item.kind === "switch") {
+            return (
+              <div
+                key={item.path}
+                className="flex items-start justify-between gap-3 rounded-md border border-dashed border-border px-2.5 py-2"
+              >
+                <div className="min-w-0">
+                  <div className="text-xs font-medium">{item.label}</div>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                    {item.hint}
+                  </p>
+                </div>
+                <Switch
+                  id={id}
+                  checked={Boolean(value)}
+                  onCheckedChange={(checked) => onChange(item.path, checked)}
+                />
+              </div>
+            );
+          }
+          const numeric = Number(value);
+          if (item.kind === "percent") {
+            const percent = Math.round((Number.isFinite(numeric) ? numeric : 0) * 100);
+            return (
+              <div
+                key={item.path}
+                className="flex flex-col gap-1 rounded-md border border-dashed border-border px-2.5 py-2"
+              >
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-xs font-medium">{item.label}</span>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {percent}%
+                  </span>
+                </div>
+                <input
+                  id={id}
+                  type="range"
+                  min={10}
+                  max={99}
+                  step={1}
+                  value={percent}
+                  onChange={(event) =>
+                    onChange(item.path, Number(event.target.value) / 100)
+                  }
+                  className="w-full accent-primary"
+                />
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  {item.hint}
+                </p>
+              </div>
+            );
+          }
+          return (
+            <div
+              key={item.path}
+              className="flex flex-col gap-1 rounded-md border border-dashed border-border px-2.5 py-2"
+            >
+              <label htmlFor={id} className="text-xs font-medium">
+                {item.label}
+              </label>
+              <div className="flex items-center gap-1.5">
+                <Input
+                  id={id}
+                  type="number"
+                  min={item.min}
+                  max={item.max}
+                  step={item.step ?? 1}
+                  value={Number.isFinite(numeric) ? numeric : ""}
+                  onChange={(event) =>
+                    onChange(
+                      item.path,
+                      event.target.value === "" ? null : Number(event.target.value),
+                    )
+                  }
+                  className="h-7 w-24 text-xs"
+                />
+                {item.unit && (
+                  <span className="text-[11px] text-muted-foreground">
+                    {item.unit}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                {item.hint}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
 
 export function CoreConfigEditor() {
   const [config, setConfig] = useState<CoreConfig | null>(null);
@@ -133,19 +340,31 @@ export function CoreConfigEditor() {
 
   // Keep behavior-changing options separate from cost-tuning controls.
   const safeFields = useMemo(
-    () => (config?.fields ?? []).filter((field) => !field.unsafe),
+    () =>
+      (config?.fields ?? []).filter(
+        (field) => !field.unsafe && !TUNING_PATHS.has(field.path),
+      ),
     [config],
   );
   const unsafeFields = useMemo(
+    () =>
+      (config?.fields ?? []).filter(
+        (field) => field.unsafe && !TUNING_PATHS.has(field.path),
+      ),
+    [config],
+  );
+  // The tuning rows are edited above, but they still count as unsafe: the
+  // warning strip has to appear when one of them is what changed.
+  const allUnsafe = useMemo(
     () => (config?.fields ?? []).filter((field) => field.unsafe),
     [config],
   );
   const unsafeTouched = useMemo(() => {
     if (!config) return 0;
-    return unsafeFields.filter(
+    return allUnsafe.filter(
       (field) => config.values[field.path] !== draft[field.path],
     ).length;
-  }, [config, draft, unsafeFields]);
+  }, [config, draft, allUnsafe]);
 
   /** Keys the installed AmritaCore no longer knows about. */
   const removed = config?.removed ?? [];
@@ -182,6 +401,14 @@ export function CoreConfigEditor() {
       <p className="text-xs text-muted-foreground">
         保存后写入 <code>~/.amrita/core.json</code>，重启后仍然生效。
       </p>
+
+      <CoreTuning
+        values={draft}
+        onChange={setValue}
+        onSave={() => void save()}
+        saving={saving}
+        dirty={dirty}
+      />
 
       {removed.length > 0 && (
         <section className="flex flex-col gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">

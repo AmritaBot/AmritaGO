@@ -29,6 +29,7 @@ FIELD_LABELS: dict[str, str] = {
     "llm.compaction_trigger_ratio": "压缩触发比例",
     "llm.slide_target_ratio": "滑动裁剪目标比例",
     "llm.memory_length_limit": "历史消息条数上限",
+    "function_config.agent_tool_parallel_limit": "工具并行上限",
     "llm.enable_overflow_recovery": "超限后自动恢复",
     "llm.enable_multi_modal": "启用多模态",
     "llm.session_tokens_windows": "默认上下文窗口",
@@ -149,6 +150,8 @@ EDITABLE_FIELDS: tuple[str, ...] = (
     "llm.compaction_max_tokens",
     "function_config.use_minimal_context",
     "function_config.agent_tool_call_limit",
+    # Core 1.4: how many concurrency-safe calls of one round may overlap.
+    "function_config.agent_tool_parallel_limit",
     "function_config.agent_tool_refusal_rounds",
     "function_config.validate_tool_arguments",
     "function_config.agent_step_token_budget",
