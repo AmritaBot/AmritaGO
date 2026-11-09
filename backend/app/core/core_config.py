@@ -135,6 +135,17 @@ UNSAFE_FIELDS: dict[str, str] = {
 }
 
 # Fields the UI may change; keys are dotted paths into ``AmritaConfig``.
+# Values this app does not leave at the library default.
+#
+# ``agent_tool_call_limit`` is the number of tool rounds one turn may run. The
+# library ships 10, which a real task (read a repo, run the tests, fix, rerun)
+# burns through in a few minutes and then gets cut off mid-way. 50 is the same
+# knob, just sized for work that actually takes more than a couple of steps;
+# anyone who wants the old behaviour can still set it back in 常用设置.
+APP_DEFAULTS: dict[str, Any] = {
+    "function_config.agent_tool_call_limit": 50,
+}
+
 EDITABLE_FIELDS: tuple[str, ...] = (
     "llm.max_tokens",
     "llm.llm_timeout",
@@ -235,7 +246,7 @@ def field_schema(path: str) -> dict[str, Any] | None:
         "choices": choices,
         "description": FIELD_DESCRIPTIONS.get(path) or _short(info.description or ""),
         "doc": (info.description or "").strip(),
-        "default": _jsonable(info.default),
+        "default": APP_DEFAULTS.get(path, _jsonable(info.default)),
         "constraints": _constraints(info),
         # Isolated in the UI: a value here changes what the agent will do.
         "unsafe": unsafe_reason is not None,
@@ -361,7 +372,11 @@ async def load_raw() -> dict[str, Any]:
 
 def editable_values(raw: dict[str, Any]) -> dict[str, Any]:
     flat = flatten(raw)
-    return {path: flat[path] for path in EDITABLE_FIELDS if path in flat}
+    return {
+        path: flat[path] if path in flat else APP_DEFAULTS[path]
+        for path in EDITABLE_FIELDS
+        if path in flat or path in APP_DEFAULTS
+    }
 
 
 async def read_config() -> dict[str, Any]:
@@ -382,6 +397,11 @@ async def read_config() -> dict[str, Any]:
     values = editable_values(raw)
     model_flat = flatten(_defaults())
     file_flat = flatten(stored) if stored else {}
+    # A file that is silent about a knob keeps the library default, which for
+    # some knobs is not what this app wants. Show the value that will run.
+    for path, value in APP_DEFAULTS.items():
+        if path not in file_flat:
+            values[path] = value
 
     fields: list[dict[str, Any]] = []
     for path in EDITABLE_FIELDS:
@@ -483,11 +503,21 @@ async def apply_on_startup() -> None:
     """Install the persisted snapshot into the running library."""
     from amrita_core import set_config
 
-    raw = await read_json(PATHS.core_config)
-    if not raw:
-        return
+    raw = await read_json(PATHS.core_config) or {}
     try:
-        set_config(AmritaConfig.model_validate(raw))
-        logger.info("Loaded AmritaCore config from disk")
+        data = AmritaConfig.model_validate(raw).model_dump()
+        # A key the file does not mention keeps the library default; these are
+        # the ones the app overrides so a fresh install starts with sane values.
+        stored = flatten(raw)
+        changed = False
+        for path, value in APP_DEFAULTS.items():
+            if path not in stored:
+                _set_path(data, path, value)
+                changed = True
+        set_config(AmritaConfig.model_validate(data))
+        logger.info(
+            "Loaded AmritaCore config from disk"
+            + (" (app defaults applied)" if changed else "")
+        )
     except ValidationError as exc:
         logger.warning(f"Ignoring invalid core.json: {exc}")
