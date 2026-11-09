@@ -100,8 +100,7 @@ function describeArgs(event: MetaEvent): string | null {
 function foldCall(call: ToolCall, event: MetaEvent): ToolCall {
   const done = event.metadata.is_done === true;
   const error = event.metadata.err == null ? null : String(event.metadata.err);
-  const result =
-    typeof event.metadata.result === "string" ? event.metadata.result : null;
+  const result = resultText(event.metadata.result);
   // Keep cancelled and timed-out calls from being relabeled as completed.
   const settled = call.status === "cancelled" || call.status === "timeout";
   return {
@@ -573,6 +572,35 @@ function thinkingLabel(ms?: number): string | null {
  * the stream (an optimistic or mock message), where there is nothing but the
  * split fields to go on.
  */
+/**
+ * The text of a recorded tool result.
+ *
+ * A result is a string or, since the backend learned about multimodal tools, a
+ * list of content blocks. The blocks stay in the trace untouched; this is only
+ * what the row prints, so an image reads as a marker instead of "[object]".
+ */
+function resultText(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (!Array.isArray(value)) return null;
+  const parts: string[] = [];
+  for (const block of value) {
+    if (typeof block === "string") {
+      parts.push(block);
+      continue;
+    }
+    if (block && typeof block === "object") {
+      const text = (block as { text?: unknown }).text;
+      if (typeof text === "string") {
+        parts.push(text);
+        continue;
+      }
+      const kind = (block as { type?: unknown }).type;
+      parts.push(`[${typeof kind === "string" ? kind : "内容"}]`);
+    }
+  }
+  return parts.join("\n") || null;
+}
+
 export function Trace({
   message,
   streaming,

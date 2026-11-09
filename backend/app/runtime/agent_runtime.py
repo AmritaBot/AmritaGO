@@ -215,7 +215,8 @@ def _tool_exchanges(trace: list[dict[str, Any]]) -> list[Any]:
         if isinstance(arguments, str) and arguments:
             slot["arguments"] = arguments
         result = metadata.get("result")
-        if isinstance(result, str):
+        # Text or a list of content blocks; both replay into a tool message.
+        if isinstance(result, str) or isinstance(result, list):
             slot["result"] = result
 
     rebuilt: list[Any] = []

@@ -60,34 +60,30 @@ MAX_RECORDED_ARGS = 4000
 MAX_RECORDED_RESULT = 8000
 
 
-def _flatten(content: Any) -> str:
-    """One line of text out of a tool result.
+def _clip_text(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}\n…（共 {len(text)} 字符，已截断）"
 
-    Since AmritaCore 1.4 a tool result may be a list of content blocks, not
-    just a string. The transcript and the audit log are text, so non-text
-    blocks are described rather than dropped silently.
+
+def _clip(content: Any, limit: int) -> Any:
+    """Shorten long text, keep everything else exactly as it came.
+
+    A tool result is text or, since core 1.4, a list of content blocks. The
+    blocks are data the model produced (an image, a structured payload), so
+    they are recorded as-is instead of being flattened into a description:
+    a flattened result cannot be replayed into the next turn's context.
     """
     if isinstance(content, str):
-        return content
-    if not isinstance(content, list):
-        return str(content)
-    parts: list[str] = []
-    for block in content:
-        text = getattr(block, "text", None)
-        if isinstance(text, str):
-            parts.append(text)
-            continue
-        kind = getattr(block, "type", None) or type(block).__name__
-        parts.append(f"[{kind}]")
-    return "\n".join(parts)
-
-
-def _clip(text: Any, limit: int) -> str:
-    """Keep the head of a long payload, and say how much was dropped."""
-    value = _flatten(text)
-    if len(value) <= limit:
-        return value
-    return f"{value[:limit]}\n…（共 {len(value)} 字符，已截断）"
+        return _clip_text(content, limit)
+    if isinstance(content, list):
+        return [_clip(item, limit) for item in content]
+    if isinstance(content, dict):
+        return {key: _clip(value, limit) for key, value in content.items()}
+    dumped = content.model_dump(mode="json") if hasattr(content, "model_dump") else content
+    if isinstance(dumped, (str, list, dict)):
+        return _clip(dumped, limit)
+    return dumped
 
 
 # What the transcript says when the user cuts a spent run off.
@@ -346,7 +342,7 @@ class LimitAwareStrategy(ReActAgentStrategy):
         tool_call: ToolCall,
         *,
         arguments: str,
-        result: str | None = None,
+        result: Any = None,
     ) -> None:
         """Write the call's payload into the transcript.
 
